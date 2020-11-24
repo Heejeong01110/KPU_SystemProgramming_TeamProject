@@ -11,7 +11,7 @@
 	3. server는 managefifo에 있는 요청 메시지를 확인하면 3개의 FIFO 파일 "{요청자 PID}FIFO1","{요청자 PID}FIFO2","{요청자 PID}FIFO3"을 생성하고 3개의 쓰레드를 각각의 파일에 할당한다.
 	4. client는 3개의 쓰레드를 할당하고 각 쓰레드는 순서에 따라 "{자신의 PID}FIFO1","{자신의 PID}FIFO2","{자신의 PID}FIFO3"를 open한다 만약 파일이 없다면 T시간 동안 스핀하며 대기한다.(T시간이 지나면 프로세스를 종료한다.)
 	5. client의 각 쓰레드는 "code.txt"파일을 3분할하여 병행적으로 읽은 후 "{자신의 PID}FIFO{n}" 파일에 write한다. 마지막에는 "request END"를 추가한다.(서버 쓰레드와 FIFO 클라이언트 쓰레드가 1대1대1 대응이므로 마지막 메시지에는 식별정보 필요없음, n = 쓰레드 번호)
-	6. server의 각 쓰레드는 "request {요청자 PID} END"를 읽을 때까지 "{요청자 PID}FIFO{n}" 파일을 읽고 "{요청자 PID}FIFO{n}temp"파일에 임시 저장한다.
+	6. server의 각 쓰레드는 "request {요청자 PID} END"를 읽을 때까지 "{요청자 PID}FIFO{n}" 파일을 읽고 "{요청자 PID}temp{n}"파일에 임시 저장한다.
 	7. server의 각 쓰레드는 "{요청자 PID}temp{n}" 읽고 복호화하여 "{요청자 PID}FIFO{n}" 파일에 write한다. 마지막에는 "response END"를 추가한다.(서버 쓰레드와 FIFO 클라이언트 쓰레드가 1대1대1 대응이므로 마지막 메시지에는 식별정보 필요없음)
 	8. client의 1번 쓰레드는 "{자신의 PID}FIFO1"의 내용을 "response END"를 읽을 때까지 출력한다.
 	9. client의 2번 쓰레드는 "{자신의 PID}FIFO2"의 내용을 "response END"를 읽을 때까지 "{자신의 PID}temp2" 파일에 저장하고 1번 쓰레드의 출력이 끝나면 "{자신의 PID}temp2"의 내용을 출력한다.
@@ -28,7 +28,6 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <sys/types.h>
-#include <signal.h>
 
 #define THREADNUM 3
 #define BUF_SIZE 4096
@@ -54,7 +53,7 @@ int main()
     char buf[BUF_SIZE];
     int protocol;
 
-	memset(buf,0x00,BUF_SIZE);
+
     /*2. open managefifo file 만약 파일이 없다면 {T}시간 동안 스핀하며 대기한다.*/
     //{T} 시간 측정 시작
     while((protocol = open("./managefifo", O_APPEND | O_WRONLY)) < 0){
@@ -69,14 +68,12 @@ int main()
     }   
     fileSize = (long long)sb.st_size;
     mypid = (long)getpid();
-    sprintf(buf,"request %ld %lld \n",mypid,fileSize);
-	printf("strlen(buf) = %d\n",strlen(buf));
-    if(write(protocol, buf, strlen(buf)) < 0 ){ 
+    sprintf(buf,"request %ld %lld ",mypid,fileSize);
+    if(write(protocol, buf, BUF_SIZE) < 0 ){ 
         printf("fail to call write(protocol,request)\n");
         exit(1);
     }
-	write(1,buf,strlen(buf));
-    close(protocol);
+    
     /*4. 3개의 쓰레드를 할당*/
     for(int i=0;i<THREADNUM;i++){
 	//실패 시 에러처리 추가 
@@ -138,7 +135,7 @@ void* filesend(void* arg){
             printf("fail to call write()\n");
             error_handler(linkFileName);
         }else{
-		//printf("send to %s: %s\n",fileName,buf);
+		printf("send to %s: %s\n",fileName,buf);
 	}
     }
     if(read(linkFd,buf,(fileSize/THREADNUM)%BUF_SIZE)<0){
@@ -149,7 +146,7 @@ void* filesend(void* arg){
         printf("fail to call read()\n");
         error_handler(linkFileName);
     }else{
-	//printf("send to %s: %s\n",fileName,buf);
+	printf("send to %s: %s\n",fileName,buf);
     }
     if(write(fifoFd,"request END",11)<0){
         printf("fail to call read()\n");
