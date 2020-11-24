@@ -22,9 +22,9 @@ void error_handler(char * linkFileName){
 void* filesend(void* th);
 pthread_t thread[3];
 static int ShmCreate(key_t key);
-static int ShmWrite(char *shareddata);
-static int ShmRead(char *sMemory);
-static int ShmFree(void);
+static int ShmWrite(int shmid, char *shareddata);
+static int ShmRead(int shmid, char *sMemory);
+static int ShmFree(int shmid);
 
 
 int main(){
@@ -36,8 +36,13 @@ int main(){
     int codeFd; /*code.txt 파일의 파일디스크립터*/
     
 
-    /*1. manage sharedmemory 생성*/
-    ShmCreate(manageKey);
+    /*server1. manage sharedmemory 생성*/
+    /*
+    if(shmid = ShmCreate(manageKey) == -1){
+        printf("fail to manageShm create\n");
+        exit(1);
+    }*/
+    /*1. managesharedmemory 연결*/
 
 
     /*2. code.txt의 상태 읽기*/
@@ -75,7 +80,7 @@ void* filesend(void* arg){
     key_t threadKey;  /*스레드가 사용할 shared memory*/
     char fileName[FILENAMESIZE];
     char linkFileName[FILENAMESIZE];
-    int shmid;
+    int thshmid;
     int linkFd;
     char buf[MAX_SIZE];
     
@@ -85,25 +90,15 @@ void* filesend(void* arg){
     sprintf(fileName,"%ld%d",mypid,n);
     threadKey = atoi(fileName);
 
-    ShmCreate(threadKey);
+    thshmid = ShmCreate(threadKey);
 
     /*2. 파일 send*/
-    //ShmWrite(char *shareddata, int size)
-
-
-    /* 파일을 병행적으로 읽는 방법 
-	1. link()를 통해 링크파일을 만든다(링크파일은 read write pointer를 공유하지 않지만 원본 파일의 내용은 공유하기 때문에 파일을 병행적으로 읽는 것에 적절하다)
-	2. 링크파일을 open한다.
-	3. lseek()를 통해 적절한 위치로 read write pointer 이동시킨다.
-    */
-
     /*2-1. 파일 디스크립터 연결*/
     sprintf(linkFileName,"codelink%ld_%d",mypid,n);
     if(link("code.txt",linkFileName)<0){
         printf("fail to call link(code.txt,%s)\n",linkFileName);
         error_handler(linkFileName);
     }
-
     /*2-2. 파일 디스크립터 read로 오픈*/
     if((linkFd=open(linkFileName,O_RDONLY))<0){
         printf("fail to call open(%s)\n",linkFileName);
@@ -111,19 +106,24 @@ void* filesend(void* arg){
     }
 
     rwpointer = (fileSize/THREADNUM)*(n-1); /*파일을 스레드의 크기로 나누어 스레드 고유번호 부분을 point한다.*/
+    //파일의 처음을 기준으로 포인터값 만큼 이동
     if(lseek(linkFd,rwpointer,SEEK_SET)<0){
         printf("fail to call lseek(%s)\n",linkFileName);
         error_handler(linkFileName);
     }
 
-    for(int i = 0 ;i < (fileSize/THREADNUM)/BUF_SIZE;i++){
-        if(read(linkFd,buf,BUF_SIZE)<0){
+    /*3. 암호화 파일 보내기*/
+    for(int i = 0 ;i < (fileSize/THREADNUM)/MAX_SIZE;i++){
+        /*3-1 buf에 값 저장*/
+        if(read(linkFd,buf,MAX_SIZE)<0){
             printf("fail to call read()\n");
             error_handler(linkFileName);
         }
-        /*4. 암호화 파일 보내기*/
+        
+        //sharedmemory
+        ShmWrite(buf); //threadKey 입력
         /*
-	    if(write(fifoFd,buf,BUF_SIZE)<0)
+	    if(write(fifoFd,buf,MAX_SIZE)<0)
         {
             printf("fail to call write()\n");
             error_handler(linkFileName);
@@ -133,17 +133,17 @@ void* filesend(void* arg){
 	    }
         */
     }
-    /*5. 복호화된 파일 읽기*/
-    /*
-    if(read(linkFd,buf,(fileSize/THREADNUM)%BUF_SIZE)<0){
+    
+    
+    if(read(linkFd,buf,(fileSize/THREADNUM)%MAX_SIZE)<0){
         printf("fail to call read()\n");
         error_handler(linkFileName);
     }
-    */
+    
 
-    /*병렬적으로 보내기(?)*/
+    
     /*
-    if(write(fifoFd,buf,(fileSize/THREADNUM)%BUF_SIZE)<0)
+    if(write(fifoFd,buf,(fileSize/THREADNUM)%MAX_SIZE)<0)
     {
         printf("fail to call read()\n");
         error_handler(linkFileName);
@@ -153,7 +153,8 @@ void* filesend(void* arg){
     }
     */
 
-    /*6. request END 추가*/
+    /*5. request END 추가*/
+    /*
     if(write(fifoFd,"request END",11)<0){
         printf("fail to call read()\n");
         error_handler(linkFileName);
@@ -161,6 +162,13 @@ void* filesend(void* arg){
     else{
 	    printf("send to %s: request END\n",fileName,buf);
     }
+    */
+
+    //6. client의 1번 쓰레드는 "{자신의 PID}FIFO1"의 내용을 "response END"를 읽을 때까지 출력한다.
+    //7. client의 2번 쓰레드는 "{자신의 PID}FIFO2"의 내용을 "response END"를 읽을 때까지 "{자신의 PID}temp2" 파일에 저장하고 1번 쓰레드의 출력이 끝나면 "{자신의 PID}temp2"의 내용을 출력한다.
+    //8. client의 3번 쓰레드는 "{자신의 PID}FIFO3"의 내용을 "response END"를 읽을 때까지 "{자신의 PID}temp3" 파일에 저장하고 2번 쓰레드의 출력이 끝나면 "{자신의 PID}temp3"의 내용을 출력한다.
+
+    
 
 
 
@@ -172,7 +180,7 @@ void* filesend(void* arg){
 }
 
 
-static int ShmCreate(key_t key)
+static int ShmCreate(key_t key) //성공시 shmid 리턴
 {
     if((shmid = shmget(key, MAX_SIZE, IPC_CREAT| IPC_EXCL | 0666)) == -1) {
         
@@ -184,7 +192,7 @@ static int ShmCreate(key_t key)
         if(shmid == -1)
         {
             printf("공유메모리 할당 오류\n");
-            return 1;
+            return -1;
         }
         else
         {
@@ -194,15 +202,15 @@ static int ShmCreate(key_t key)
             if(shmid == -1)
             {
                 perror("Shared memory create fail");
-                return 1;
+                return -1;
             }
         }
     }
     
-    return 0;
+    return shmid;
 }
  
-static int ShmWrite(char *shareddata) //고치기
+static int ShmWrite(int shmid, char *shareddata) //고치기
 {
     void *shmaddr;
     
@@ -225,7 +233,7 @@ static int ShmWrite(char *shareddata) //고치기
     return 0;
 }
  
-static int ShmRead(char *sMemory)
+static int ShmRead(int shmid, char *sMemory)
 {
     void *shmaddr;
     char mess[MEM_SIZE] = {0};
@@ -248,7 +256,7 @@ static int ShmRead(char *sMemory)
     return 0;
 }
  
-static int ShmFree(void)
+static int ShmFree(int shmid)
 {
     if(shmctl(shmid, IPC_RMID, 0) == -1) //공유메모리 제거
     {
