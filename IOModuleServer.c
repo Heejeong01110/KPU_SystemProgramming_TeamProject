@@ -8,14 +8,14 @@
 	통신 규칙:
 	1. server가 managefifo file을 생성한다.
 	2. client는 managefifo file이 있으면 open 후 "request {자신의 PID} {파일 크기}"를 write하고, 없으면 T시간 동안 스핀하며 대기한다.(T시간이 지나면 프로세스를 종료한다.)
-	3. server는 managefifo에 있는 요청 메시지("request {자신의 PID} {파일 크기}")를 확인하면 응답을 위해 3개의 쓰레드를 할당하고, 각 쓰레드는 3개의 "{요청자 PID}FIFO{n}2ser"와 "{요청자 PID}FIFO{n}2cli" FIFO 파일을 생성한다.  
-	4. client는 3개의 쓰레드를 할당하고 각 쓰레드는 순서에 따라 "{자신의 PID}FIFO1{n}ser"를 open한다
-	5. client의 각 쓰레드는 "code.txt"파일을 3분할하여 병행적으로 읽은 후 "{자신의 PID}FIFO{n}2ser" 파일에 writelock를 건 후 write한다.
-	6. server의 각 쓰레드는 "{요청자 PID}FIFO{n}2ser" 파일을 읽고 복호화하여 "{요청자 PID}FIFO{n}temp.txt"파일에 임시 저장한다.
-	7. server의 각 쓰레드는 "{요청자 PID}FIFO{n}temp.txt" 읽고 "{요청자 PID}FIFO{n}2cli" 파일에 writelock를 건 후 write한다.
-	8. client의 1번 쓰레드는 "{자신의 PID}FIFO12cli"의 내용을 읽고 출력한다.
-	9. 8이 끝나면 client의 2번 쓰레드는 "{자신의 PID}FIFO22cli"의 내용을 읽고 출력한다.
-	10. 9가 끝나면 client의 3번 쓰레드는 "{자신의 PID}FIFO32cli"의 내용을 읽고 출력한다.
+	3. server는 managefifo에 있는 요청 메시지("request {자신의 PID} {파일 크기}")를 확인하면 응답을 위해 3개의 쓰레드를 할당하고, 각 쓰레드는 3개의 "{요청자 PID}FIFO{n}" FIFO 파일을 생성한다.  
+	4. client는 3개의 쓰레드를 할당하고 각 쓰레드는 순서에 따라 "{자신의 PID}FIFO1","{자신의 PID}FIFO2","{자신의 PID}FIFO3"를 open한다 만약 파일이 없다면 T시간 동안 스핀하며 대기한다.(T시간이 지나면 프로세스를 종료한다.)
+	5. client의 각 쓰레드는 "code.txt"파일을 3분할하여 병행적으로 읽은 후 "{자신의 PID}FIFO{n}" 파일에 write한다. 마지막에는 "request END"를 추가한다.(서버 쓰레드와 FIFO 클라이언트 쓰레드가 1대1대1 대응이므로 마지막 메시지에는 식별정보 필요없음, n = 쓰레드 번호)
+	6. server의 각 쓰레드는 "request {요청자 PID} END"를 읽을 때까지 "{요청자 PID}FIFO{n}" 파일을 읽고 "{요청자 PID}FIFO{n}temp.txt"파일에 임시 저장한다.
+	7. server의 각 쓰레드는 "{요청자 PID}temp{n}" 읽고 복호화하여 "{요청자 PID}FIFO{n}" 파일에 write한다. 마지막에는 "response END"를 추가한다.(서버 쓰레드와 FIFO 클라이언트 쓰레드가 1대1대1 대응이므로 마지막 메시지에는 식별정보 필요없음)
+	8. client의 1번 쓰레드는 "{자신의 PID}FIFO1"의 내용을 "response END"를 읽을 때까지 출력한다.
+	9. client의 2번 쓰레드는 "{자신의 PID}FIFO2"의 내용을 "response END"를 읽을 때까지 "{자신의 PID}temp2" 파일에 저장하고 1번 쓰레드의 출력이 끝나면 "{자신의 PID}temp2"의 내용을 출력한다.
+	10. client의 3번 쓰레드는 "{자신의 PID}FIFO3"의 내용을 "response END"를 읽을 때까지 "{자신의 PID}temp3" 파일에 저장하고 2번 쓰레드의 출력이 끝나면 "{자신의 PID}temp3"의 내용을 출력한다.
 */
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -28,7 +28,7 @@
 #include <semaphore.h>
 
 #define BUF_SIZE 4096
-#define FILENAMESIZE 200
+#define FILENAMESIZE 255
 #define null NULL
 #define THREADPERWORK 3
 pthread_t thread[3]; 
@@ -42,24 +42,11 @@ struct threadArg{
 };
 
 /* 이 함수를 사용하면 에러처리를 위해 프로그램을 exit() 시키기 전에 FIFO파일이나 link파일을 삭제시켜줄 수 있다.*/
-void error_handler(char * FileName1, char * FileName2, char * FileName3, char * FileName4){
-    	if(FileName1!=null)
-        	unlink(FileName1);
-	if(FileName2!=null)
-        	unlink(FileName2);
-	if(FileName3!=null)
-        	unlink(FileName3);
-	if(FileName4!=null)
-        	unlink(FileName4);
-	pthread_exit(0);
-}
-
-void decoding(char code[],int len)
-{
-	for(int i = 0 ; i<len;i++)
-	{
-		code[i] = code[i]-1;
-	}
+void error_handler(char * linkFileName){
+    unlink("./managefifo");
+    if(linkFileName!=null)
+        unlink(linkFileName);
+    exit(1);
 }
 
 void requestPasing(char * request[3],char buf[])
@@ -87,7 +74,7 @@ int main()
     /*1. server가 managefifo file을 생성한다.*/
     if(mkfifo("./managefifo",0666) == -1){ //fifo init
         printf("fail to make fifo manage()\n");
-        error_handler("./managefifo",null,null,null);
+        error_handler(null);
     }
     
     
@@ -95,12 +82,13 @@ int main()
         /*3. server는 managefifo에 있는 요청 메시지("request {자신의 PID} {파일 크기}")를 확인하면 응답을 위해 3개의 쓰레드를 할당하고*/
     	if((protocol = open("./managefifo", O_RDONLY)) < 0){ //waiting in client
         	printf("fail to call open manage()\n");
-        	error_handler("./managefifo",null,null,null);
+        	error_handler(null);
     	}
         if((readlen=read(protocol, buf, BUF_SIZE)) < 0 ){ 
 		printf("fail to call read()");
-		error_handler("./managefifo",null,null,null);
+		error_handler(null);
         }
+	printf("%d\n",readlen);
 	if(readlen<7) /*읽은 값이 "request"의 길이인 7보다 작으면 while문 재시작*/
 		continue;
 	requestPasing(request,buf);
@@ -124,87 +112,50 @@ int main()
 
 void* filerecv(void * arg){
 	
-	int fifo2Ser;
-	int fifo2Cli;
+	int fd;
 	char buf[BUF_SIZE];
-	char fifo2SerFileName[FILENAMESIZE];
-	char fifo2CliFileName[FILENAMESIZE];
 	char tempFileName[FILENAMESIZE];
 	int tempfd;
-	int readlen;
-	struct flock fifo_lock;
 	/*매개변수 저장*/
 	struct threadArg * argument = (struct threadArg*)arg;
-	sprintf(fifo2SerFileName,"%s2ser",argument->fifoFileName);
-	sprintf(fifo2CliFileName,"%s2cli",argument->fifoFileName);
+
+	/*3. 각 쓰레드는 3개의 "{요청자 PID}FIFO{n}" FIFO 파일을 생성한다.*/
+    	if(mkfifo(argument->fifoFileName,0666) == -1){ //fifo init
+    	    printf("fail to make fifo manage()\n");
+    	    error_handler(argument->fifoFileName);
+    	}
+	if((fd = open(argument->fifoFileName,O_RDONLY))<0){ 
+        	printf("fail to call open manage()\n");
+        	error_handler(argument->fifoFileName);
+    	}
+	printf("%s opened 파일 디스크립터 = %d\n",argument->fifoFileName,fd);
+	//6. server의 각 쓰레드는 "request {요청자 PID} END"를 읽을 때까지 "{요청자 PID}FIFO{n}" 파일을 읽고 "{요청자 PID}FIFO{n}temp.txt"파일에 임시 저장한다.
 	sprintf(tempFileName,"./%stemp.txt",argument->fifoFileName);
-	
-
-	/*3. 각 쓰레드는 3개의 "{요청자 PID}FIFO{n}2ser"와 "{요청자 PID}FIFO{n}2cli" FIFO 파일을 생성한다.  */
-    	if(mkfifo(fifo2SerFileName,0666) == -1){ //fifo init
-    	    	printf("fail to make fifo manage()\n");
-		error_handler("./managefifo",fifo2SerFileName,null,null);
+	tempfd = open(tempFileName,O_RDWR|O_CREAT);
+	for(int i = 0 ;i < (argument->fileSize/THREADPERWORK)/BUF_SIZE;i++){
+        
+        	if(read(fd,buf,BUF_SIZE)<0){
+        		printf("fail to call read()\n");
+        		error_handler(argument->fifoFileName);
+    		}
+    		
+		write(tempfd,buf,strlen(buf)-1);
     	}
-	if((fifo2Ser = open(fifo2SerFileName,O_RDONLY|O_NONBLOCK))<0){ 
-        	printf("fail to call open manage()\n");
-		error_handler("./managefifo",fifo2SerFileName,null,null);
-    	}
-
-	if(mkfifo(fifo2CliFileName,0666) == -1){ //fifo init
-    	    	printf("fail to make fifo manage()\n");
-		error_handler("./managefifo", fifo2SerFileName, fifo2CliFileName,null);
-    	}
-	if((fifo2Cli = open(fifo2CliFileName,O_WRONLY))<0){ 
-        	printf("fail to call open manage()\n");
-		error_handler("./managefifo", fifo2SerFileName, fifo2CliFileName,null);
-    	}
-	/*6. server의 각 쓰레드는 "{요청자 PID}FIFO{n}" 파일을 읽고 복호화하여 "{요청자 PID}FIFO{n}temp.txt"파일에 임시 저장한다.*/
-	
-	if((tempfd = open(tempFileName,O_RDWR|O_CREAT))<0){ 
-        	printf("fail to call open manage()\n");
-		error_handler("./managefifo",fifo2SerFileName,fifo2CliFileName,tempFileName);
-    	}
-	
-	int readflag=0;
-	while(readflag==0){
-		 while((readlen=read(fifo2Ser,buf,BUF_SIZE))>0){
-			decoding(buf,readlen);
-			write(tempfd,buf,readlen);
-			readflag=1;
-		}
-	}
-	/* 7. server의 각 쓰레드는 "{요청자 PID}FIFO{n}temp.txt" 읽고 "{요청자 PID}FIFO{n}" 파일에 writelock를 건 후 write한다.*/
-	fifo_lock.l_type = F_WRLCK;
-	fifo_lock.l_whence = SEEK_SET;
-	fifo_lock.l_start = 0;
-	fifo_lock.l_len = argument->fileSize;
-	
-	if (fcntl(fifo2Cli,F_SETLKW,&fifo_lock)==-1){
-		printf("fail to call fcntl(lock)\n");
-		write(fifo2Cli,"server error\n",14);
-		error_handler("./managefifo",fifo2SerFileName,fifo2CliFileName,tempFileName);
-	}
-	
-	lseek(tempfd,0,SEEK_SET);
-	while((readlen=read(tempfd,buf,BUF_SIZE))>0){
-		write(fifo2Cli,buf,readlen);
-		printf("send:\'%s\' readlen: %d\n",buf,readlen);
-	}
-	
-	fifo_lock.l_type = F_UNLCK;
-	if(fcntl(fifo2Cli,F_SETLK,&fifo_lock)==-1){
-		printf("fail to call fcntl(unlock)\n");
-           	error_handler("./managefifo",fifo2SerFileName,fifo2CliFileName,tempFileName);
+    	if(read(fd,buf,(argument->fileSize/THREADPERWORK)%BUF_SIZE)<0){
+    	    printf("fail to call read()\n");
+    	    error_handler(argument->fifoFileName);
+    	}else{
+		
+		write(tempfd,buf,strlen(buf)-1);
 	}
 	
 	
-
-	unlink(fifo2SerFileName);
-	unlink(fifo2CliFileName);
+	//7. server의 각 쓰레드는 "{요청자 PID}temp{n}" 읽고 복호화하여 "{요청자 PID}FIFO{n}" 파일에 write한다. 마지막에는 "response END"를 추가한다.(서버 쓰레드와 FIFO 클라이언트 쓰레드가 1대1대1 대응이므로 마지막 메시지에는 식별정보 필요없음)
+	unlink(argument->fifoFileName);
 	unlink(tempFileName);
 	
-	close(fifo2Ser);
-	close(fifo2Cli);
+	printf("쓰레드 %d 종료\n",argument->number);
+	close(fd);
 	close(tempfd);
 	pthread_exit(0);
 }
