@@ -1,0 +1,2354 @@
+7장. File
+2
+목 차
+• Disk 구조
+• File system 구조
+• inode(index node)
+• Virtual File System
+• Kernel data structures for open files
+• UNIX file access primitives
+• Standard I/O Libraries
+• File System의 연결(mount)
+File 관련 issue
+• 파일 관련 issue
+– 사용자가 사용하는 이름과 disk 상의 데이터를 연결하는 객체
+– 파일 속성 제어
+– 파일 접근 제어
+– 파일 계층 구조 지원
+– 장치 파일 지원
+• Linux file access primitives – open, creat : 파일 열기 or 생성
+– close : 파일 닫기
+– read : 파일에서 정보 추출
+– write : 파일에 정보 기록
+– lseek : 파일 접근 위치 변경
+– unlink, remove : 파일 삭제
+– fcntl : 파일 속성 제어
+– …
+3
+Disk의 물리적 구성 요소
+ü Head, ARM
+ü Platter, Spindle
+ü Surface, Track, Sector, Cylinder
+4
+Disk의 물리적 구성 요소
+• 데이터 접근 방법
+– Sector addressing : surface(head), track(cylinder), sector – Heads move to appropriate track : 탐색 시간 (Seek time) – Wait for the sector to appear under the head : 회전 지연 시간
+(rotational latency) – Read/Write the sector: 데이터 전달 시간 (transmission time)
+– Seek time과 Rotational Latency를 줄이는 것이 중요
+è 다양한 디스크 스케줄링 방법 존재, parallel access 이용
+5
+Disk의 논리적 구조
+• 논리적 관점 (Linux 입장에서 디스크 구조) – 디스크는 디스크 블록들의 집합 (disk is a collection of disk
+blocks) – 디스크 블록의 크기는 보통 페이지 프레임의 크기와 같다 (4K,
+8K) – 블록 번호를 Sector Address로 변환하는 작업은 컨트롤러나
+디스크 드라이버에서 수행
+1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 ….
+0
+6
+Disk 블록 관리
+• 시나리오
+– 새로운 14 K 크기의 파일을 디스크에게 쓰려고 함
+– 디스크 블록의 크기는 4K로 가정 (따라서 4개의 디스크 블록이 필요) – 아래 그림에서 빗금이 있는 디스크 블록들은 이미 사용 중인 (파일의 데
+이터를 갖고 있는) 블록이라고 가정
+– 어떤 디스크 블록들을 할당할 것인가? (disk block allocation problem)
+• 디스크 블록 할당 방법
+– 연속 할당 방법 (sequential allocation) – 불연속 할당 방법 (non sequential allocation)
+0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 15 16 ..
+7
+Disk 블록 관리
+• 연속 할당 방법
+new file name
+start size 0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 .. 15 16
+8
+Disk 블록 관리
+• 불연속 할당 방법 : 블록 체인 (block chain) 방법
+– 현재 시나리오에서는 1, 5, 6, 9 블록을 할당
+– 할당된 블록을 링크로 연결
+new file name
+0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 .. 15 16
+9
+Disk 블록 관리
+• 불연속 할당 방법 : 인덱스 블록 (index block) 기법
+new file name
+index block
+…...
+0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 .. 15 16
+10
+File System 구조
+• 파일 시스템
+– 디스크의 각 파티션마다 존재
+– 4 부분으로 구성 : boot, super block, inode, data blocks – mkfs, newfs 등의 명령으로 생성
+system
+(PC)
+/dev/hda /dev/hdb
+/dev/hda1
+/dev/hda2
+/dev/hda3
+boot
+super block
+i-node
+disk blocks
+11
+File System 구조
+• 수퍼 블록 (super block) – 파일 시스템의 정보 관리하는 객체 (파일의 정보를 inode가 관리
+하는 것과 유사) – 파일 시스템 유형 : ext2/4, nfs, msdos, coda, proc, ntfs, …
+– Ext2/4의 경우
+• free inode와 free block들을 bitmap으로 관리
+• block group 정의 (ffs의 cylinder group와 유사한 개념)
+• 결함 허용 기능 제공
+– nfs (Network File System by Sun)의 경우
+• 각 파일 인터페이스를 서버에 대한 RPC로 변환
+• XDR 사용
+• 약한 일관성 (weak consistency) 보장
+12
+Structure of the Ext2 File System
+Block group 0 Block group 1 ... Block group n Boot
+block
+Super
+block
+Group
+descriptors
+Block
+bitmap
+Inode
+bitmap
+Inode
+blocks Data blocks
+partition 2 partition 3
+hard disk
+Ext2 file system
+block group
+partition 1
+13
+UNIX File System
+• File system layout – Bootstrap block(0)- kernel loading program
+– Super block(1) - file system information usually kept in memory
+• # of blocks for file system ( r)
+• # of blocks for inode blocks (n-1)
+• # of blocks for data blocks (r-n)
+• File system last update time
+• A list of free data block numbers
+• A list of free inode numbers – Inode blocks(2 ~ n)
+• A list of inode structures – Data blocks(n+1 ~ r)
+• A list of data blocks
+Bootstrap block
+Super block
+Inode blocks
+Data blocks
+0
+1
+2~n
+n+1~r
+14
+Caching: Buffer cache
+사용자 application
+디스크
+블록 1
+디스크
+블록 23
+디스크
+블록 24
+디스크
+블록 48
+디스크
+블록 25 … … …
+디스크
+블록 24
+디스크
+블록 36
+디스크
+블록 48
+디스크
+블록 1
+디스크
+블록 23 …
+물리적 디스크 블록
+버퍼 캐시의 버퍼 풀
+(1) file I/O 요청
+(2) 요청된 파일에 해당하는 디스크 블록 확인
+(3) 해당 디스크 블록이 버퍼 캐시에 존재하는지 확인
+(4) 존재하지 않는 디스크 블록을 버퍼로 가져오기
+15
+Caching: sync and fsync
+#include <unistd.h>
+void sync(void);
+int fsync(int filedes);
+• sync – flush all the main memory buffers containing information about file
+systems to disk
+• fsync – flush out all data and attributes associated with a particular file
+• Return of fsync: – Success: 0
+– Fail: -1
+16
+File System 정보
+#include <sys/statvfs.h>
+int statvfs(const char *path, struct statvfs *buf);
+int fstatvfs(int fd, struct statvfs *buf);
+• path 또는 fd 에 의해 참조되는 파일 시스템에 대한 정보를 return
+17
+File System 정보 예: fsys
+/* fsys -- 화일 시스템 정보를 프린트한다. */
+/* 화일 시스템 이름이 인수로 전달된다. */
+#include <sys/statvfs.h>
+#include <stdlib.h>
+#include <stdio.h>
+main (int argc, char **argv)
+{
+struct statvfs buf;
+if (argc != 2) {
+fprintf (stderr, "usage: fsys filename\n");
+exit (1);
+}
+if (statvfs (argv[1], &buf) !=0) {
+fprintf (stderr, "statvfs error\n");
+exit (2);
+}
+printf ("%s:\tfree blocks %d\tfree inodes %d\n",
+argv[1], buf.f_bfree, buf.f_ffree);
+exit (0);
+} 18
+inode (index node)
+• inode 정의
+– Linux에서 파일을 관리하기 위한 객체
+• 파일이 새로 생성되면 만들어진다. • internal representation of a file
+• every file has one inode – 파일의 모든 정보를 관리
+• 파일에 속한 블록 위치 (index block 방법과 유사)
+• 파일 소유자 및 접근 권한
+• 파일 시간 정보
+• 파일 유형 : 커널은 정규 파일 뿐만 아니라 디렉토리, 디바이스, 파
+이프, 소켓 등도 파일이라는 추상화 객체로 관리
+– Disk에 정적으로 존재
+19
+inode (index node)
+from “Operating System Concepts” written by Siberschatz
+• inode structure
+20
+inode (index node)
+• inode에서 디스크 블록 관리
+– direct blocks: data block을 가리킴
+– indirect blocks
+• single indirect block
+– index block을 가리킴. – 이 index block은 실제 data block을 가리키는 포인터들로 구성된다. • double indirect block
+– index block이 two layers로 구성. – 첫번째 층의 index block은 다른 index block을 가리키는 포인터들로 구성
+– 두번째 층의 index block은 실제 data block을 가리키는 포인터들로 구성
+• triple indirect block
+– index block이 three layers로 구성. – 첫번째/두번째 층의 index block은 다른 index block을 가리키는 포인터들로 구성
+– 세번째 층의 index block은 실제 data block을 가리키는 포인터들로 구성
+– 예제:
+• 하나의 디스크블록 8Kbyte, 포인터 64bit(8byte)인 경우, 즉 하나의 블록이 1024개 포인터 가짐)
+21
+inode (index node)
+• inode details in Linux
+i_inode_number
+i_mode
+i_nlink, i_dev
+i_uid, gid
+i_op, i_size
+i_atime, ctime, mtime
+12 direct block
+3 indirect block ….
+inode type (4bit) u g s r w x r w x r w x
+S_IFSOCK
+S_IFLNK
+S_IFREG
+S_IFBLK
+S_IFDIR
+S_IFCHR
+S_IFIFO
+7
+13
+24
+31
+55
+67
+72 77
+83
+96 99
+123 125 128 131
+22
+inode (index node)
+• 파일 속성
+– 파일 이름(name) – 파일 유형(type) – 파일 크기(size) – 시간 정보(time, date) – 파일 소유자(user identification)
+• protection, security, and usage monitoring
+– 접근 제어(access control)
+• reading, writing, executing
+– number of blocks, link counter – access time, modification time, change time
+– list of addresses of data blocks – open 이후에는 현재 접근 위치(offset)
+23
+inode (index node)
+접근 제어
+3 class
+access control
+24
+inode (index node)
+• 장치 파일의 inode 구조
+– 파이프 (pipe)
+• 간접 블록(indirect block) 포인터를 사용하지 않음
+• readers, writers, read pointer, write pointer 필드 존재
+– 장치 파일
+• 문자 장치 파일, 블록 장치 파일
+• 직접 블록(direct block)과 간접 블록(indirect block) 포인터를 모두
+사용하지 않음
+• i_rdev : 장치 번호(device number)
+• 장치 번호는 주 번호(major number)와 부 번호(minor number)로
+구성
+• 주 번호 : 장치 유형(device type)에 따라 서로 다른 번호 설정
+• 부 번호 : 장치 단위(device unit)에 따라 서로 다른 번호 설정
+– 소켓(socket)
+• 프로토콜 패밀리와 관련 함수 유지
+25
+File System 전체 구조
+Virtual File System
+ext2 nfs coda dosfs …. ntfs procfs
+buffer cache File System
+device driver
+User mode
+System mode
+task 1 task 2 …. task n
+System call interface
+26
+Virtual File System
+27
+Virtual File System
+VFS는 일관된 인터페이스로 다양한 파일 시스템 지원 가능
+28
+File Interface
+• 파일 생성
+– creat(), open() with create option, mkfifo(), mknod() – inode와 데이터 블록들을 할당
+• 파일 접근
+– open(), close(), read(), write() – inode와 task_struct 연결
+• 파일 제어
+– stat() – lseek(), dup(), link() – mkdir(), readdir()
+• 파일 시스템 제어
+– mount() – sync(), fsck()
+29
+File Interface
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#define MAX_BUF 4
+char fname[] = "/usr/member/choijm/test.txt";
+char tmp_data[] = "abcdefghijklmn";
+int main()
+{
+int fd, size;
+char buf[MAX_BUF];
+fd = open(fname, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
+write(fd, tmp_data, sizeof(tmp_data));
+close(fd);
+fd = open(fname, O_RDONLY);
+lseek(fd, 5, SEEK_SET);
+size = read(fd, buf, MAX_BUF);
+close(fd);
+fd=open(“/dev/console”, O_WRONLY)
+write(fd, buf, MAX_BUF);
+close(fd);
+}
+offset을 이동하는 인터페이스
+터미널 같은 장치도 파일 인터페이스
+로 접근된다.
+test.txt
+abcd
+ef…
+inode
+/dev/console
+30
+Directory 구조
+• open()에서 요청한 파일에 대응되는 inode를 어떻게 발견할까? – “/usr/member/choijm/test.txt” è 해당 inode
+• 디렉토리 (폴더) – 파일 이름과 inode를 연결하는 객체
+– 디렉토리 자체도 파일임
+– 계층 구조 제공
+disk block 1
+5 etc
+4 dev
+3 usr
+1 .
+1 ..
+9 mnt
+7 var
+6 vmunix
+i_mode
+time …. 1
+inode 1 disk block 7
+17 lib
+16 include
+12 src
+3 .
+1 ..
+23 member
+20 bin
+i_mode
+time …. 7
+inode 3
+25 local
+disk block 39
+37 mark
+33 tom
+32 jim
+23 .
+3 ..
+42 choijm
+41 sooni
+i_mode
+time …. 39
+inode 23
+inode number file name
+디렉토리 각 항의 구조
+inode for /
+31
+Directory 구조
+disk block 54
+63 sum.c
+62 work
+61 test.txt
+42 .
+i_mode 23 ..
+time …. 54
+inode 42
+disk block 81
+i_mode
+time …. 81
+85
+87
+inode 61
+Real
+data
+disk block 85
+Real
+data
+disk block 87
+Real
+data
+32
+Directory 구조
+• 파일 계층 구조 (hierarchical structure)
+/
+usr dev etc var mnt vmunix
+src include lib bin member local
+jim tom mark sooni choijm
+test.txt sum.c work
+33
+File Interface
+• fd(file descriptor): details of open() system call – 디스크에서 접근하려는 파일의 inode를 찾는다. – inode를 메모리로 읽는다. – inode와 task 자료 구조를 연결한다 (이때 fd 사용)
+task_struct
+thread structure
+file_descriptor /* include/linux/sched.h */
+file structure /* include/linux/fs.h */
+TSS
+inode /* include/linux/ext2_fs_i.h */
+…
+files
+... off
+F 이 구조에서 read()나 write() 지원 가능
+34
+Kernel data structures for open files
+• user file descriptor table
+– allocated per process – identifies all open files for a process – when a process “open” or “creat” a file, the kernel allocates
+an entry – return value of “open” and “creat” is the index into the user
+file descriptor table
+– contains pointer to file table entry
+35
+Kernel data structures for open files
+• file table
+– global kernel structure
+– contains the description of all open files in the system
+• file status flag (open mode)
+• current file offset – contains pointer to in-core inode table entry
+• in-core inode table
+– global kernel structure
+– when a process opens a file, the kernel converts the
+filename into an identity pair(device number, inode number) – the kernel then loads the corresponding inode into in-core
+inode table
+36
+Kernel data structures for open files
+37
+UNIX file access primitives
+• open: opens a file for reading, writing or creating a file
+• creat: creates an empty file
+• close: closes a previously opened file
+• read: extracts information from a file
+• write: places information into a file
+• lseek: moves to a specified byte in a file
+• unlink: removes a file
+• remove: alternative method to remove a file
+• fcntl: controls attributes associated with a file
+38
+open() System Call
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+int open(const char *pathname, int flag, [mode_t mode]);
+• pathname: absolute or relative path name
+• flag: some macros in <fcntl.h>
+– O_RDONLY, O_WRONLY, O_RDWR, O_CREAT, O_TRUNC,
+O_APPEND
+• mode: used with O_CREAT flag
+• return of open: – success: a file descriptor(>=0), fail: -1
+• return of close: – success: 0, fail: -1
+39
+open() System Call
+0(stdin)
+1(stdout
+)
+2(stderr)
+3
+4
+User file descriptor
+table
+Process A
+…
+fd fd_flag ptr
+User file descriptor
+table
+Process B
+0
+1
+0
+0
+0
+1
+0
+1
+0
+0
+1
+0
+flag cnt offset ptr
+file table
+v-node table
+v-node 정보
+i-node 정보
+v-node 정보
+i-node 정보
+v-node 정보
+i-node 정보
+0(stdin)
+1(stdout
+)
+2(stderr)
+3
+4
+fd fd_flag ptr
+40
+open() System Call
+/* 초보적인 프로그램 예 */
+/* 이 헤더 파일들은 아래에서 논의한다 */
+#include <fcntl.h>
+#include <unistd.h>
+main()
+{
+int fd;
+ssize_t nread;
+char buf[1024];
+/* 화일 "data"를 읽기 위해 개방한다 */
+fd = open("data", O_RDONLY);
+/* 데이터를 읽어 들인다 */
+nread = read(fd, buf, 1024);
+/* 화일을 폐쇄한다 */
+close(fd);
+}
+41
+open() System Call
+#include <stdlib.h> /* exit 호출을 위한 것임 */
+#include <fcntl.h>
+char *workfile="junk"; /* workfile 이름을 정의한다 */
+main()
+{
+int filedes;
+/* <fcntl.h>에 정의된 O_RDWR을 사용하여 개방한다 */
+/* 화일을 읽기/쓰기로 개방한다 */
+if ((filedes = open (workfile, O_RDWR)) ==-1)
+{
+printf ("Couldn't open %s\n", workfile);
+exit (1); /* 오류이므로 퇴장한다 */
+}
+/* 프로그램의 나머지 부분이 뒤따른다 */
+exit (0); /* 정상적인 퇴장 */
+}
+42
+open() System Call
+#include <stdlib.h>
+#include <fcntl.h>
+#define PERMS 0644 /* O_CREAT를 사용하는 open을 위한 허가 */
+char *filename="newfile";
+main()
+{
+int filedes;
+if ((filedes = open (filename, O_RDWR｜O_CREAT, PERMS)) ==-1)
+{
+printf ("Couldn't create %s\n",filename);
+exit (1); /*오류이므로 퇴장한다*/
+}
+/* 프로그램의 나머지 부분이 뒤따른다 */
+exit (0) ;
+}
+43
+creat() System Call
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+int creat(const char *pathname, mode_t mode);
+• pathname: absolute or relative path name
+• mode: access permission (in octal) – 4(read), 2(write) and 1(execute) for owner, group and others – eg. 0644 means r/w for owner, r for group and others
+• Return: – success: a file descriptor(>= 0) – fail: -1
+filedes = creat(“/tmp/newfile”, 0644);
+filedes = open(“/tmp/newfile”, O_WRONLY|O_CREAT|O_TRUNC, 0644);
+44
+close() System Call
+#include <unistd.h>
+int close(int filedes);
+• Return of close: – success: 0, fail: -1
+• 프로그램의 수행이 끝나면 모든 개방된 파일은 자동적으로 close됨
+filedes = open ("file", O_RDONLY);
+.
+.
+.close(filedes);
+45
+read() System Call
+#include <unistd.h>
+ssize_t read(int fd, void *buffer, size_t n);
+• fd: file descriptor returned from open or creat • buffer: starting address where data is stored
+– The user program should reserve enough buffer area
+• n: # of bytes to read
+• Return: – # of successfully read bytes
+int fd;
+ssize_t nread;
+char buffer[SOMEVALUE];
+/* fd는 open에 대한 호출로부터 얻은 것임 */
+.
+.
+.nread = read(fd, buffer, SOMEVALUE);
+46
+read-write pointer
+• file pointer – 특정 파일 기술자를 통해 읽혀질/쓰여질 파일의 다음 바이트 위치를 기록
+(bookmark)
+int fd;
+ssize_t n1,n2;
+char buf1[512], buf2[512];
+.
+.
+.
+if(( fd = open("foo", O_RDONLY)) ==-1)
+return (-1);
+n1 = read(fd, buf1, 512);
+n2 = read(fd, buf2, 512);
+47
+read-write pointer
+/* count -- 한 파일내의 문자 수를 센다 */
+#include <stdlib.h>
+#include <fcntl.h>
+#include <unistd.h>
+#define BUFSIZE 512
+main()
+{
+char buffer[BUFSIZE];
+int filedes;
+ssize_t nread;
+long total = 0;
+/*"anotherfile"을 읽기 전용으로 개방 */
+if (( filedes = open ("anotherfile", O_RDONLY)) ==-1)
+{
+printf ("error in opening anotherfile\n");
+exit (1);
+}
+/* EOF까지 반복하라. EOF는 복귀값 0에 의해 표시된다. */
+while( (nread = read(filedes, buffer, BUFSIZE)) >0)
+total += nread; /* total을 증가시킨다. */
+printf ("total chars in anotherfile: %ld\n", total);
+exit (0);
+}
+48
+write() System Call
+#include <unistd.h>
+ssize_t write(int fd, void *buffer, size_t n);
+• fd: file descriptor returned from open or creat • buffer: 쓰여질 데이터에 대한 포인터
+• n: # of bytes to write
+• Return: – # of successfully written bytes
+int fd;
+ssize_t w1, w2;
+char header1[512], header2[1024];
+.
+.
+if( ( fd = open("newfile", O_WRONLY｜O_CREAT｜O_EXCL, 0644)) ==-1)
+return (-1);
+w1 = write(fd, header1, 512);
+w2 = write(fd, header2, 1024);
+49
+The copyfile Example
+#include <unistd.h>
+#include <fcntl.h>
+#define BUFSIZE 512
+#define PERM 0644
+int copyfile(const char *name1, const char *name2){
+int infile, outfile; ssize_t nread; char buffer[BUFSIZE];
+if((infile=open(name1, O_RDONLY))==-1) return -1;
+if((outfile=open(name2, O_WRONLY|O_CREAT|O_TRUNC, PERM))==-1){
+close(infile); return -2;
+}
+while((nread=read(infile, buffer, BUFSIZE))>0){
+if(write(outfile, buffer, nread)<nread){
+close(infile); close(outfile); return -3;
+}
+}
+close(infile); close(outfile);
+if(nread==-1) return -4;
+else return 0;
+}
+50
+read와 write의 효율성
+• Results of copyfile test
+BUFSIZE Real time User time System time
+------- --------- --------- ----------- 1 24.49 3.13 21.16
+64 0.46 0.12 0.33
+512 0.12 0.02 0.08
+4096 0.07 0.00 0.05
+8192 0.07 0.01 0.05
+è 가장 좋은 성능은 시스템의 blocking factor의 배수 일 때
+• 프로그램의 효율성 향상 방법
+– 시스템 호출의 횟수를 줄여야 한다
+51
+dup() and dup2() System Calls
+• synopsis
+#include <unistd.h>
+int dup(int oldfd);
+int dup2(int oldfd, int newfd);
+• description
+– create a copy of the file descriptor oldfd
+– close_on_exec flag is not copied. – The old and new descriptors may be used
+interchangeably
+• if the file position is modified by using lseek on one of the
+descriptors the position is also changed for the other – two descriptors do not share the close-on-exec flag
+52
+dup() and dup2() System Calls
+– dup uses the lowest-numbered unused descriptor for the
+new descriptor – dup2 makes newfd be the copy of oldfd, closing newfd first
+if necessary. – return value
+• the new descriptor, or -1 if an error occurred
+• example
+1) int fd = dup(STDOUT_FILENO);
+2) fd = open(“input_file”, O_RDONLY);
+dup2(fd, STDIN_FILENO);
+3) fd = open(“input_file”, O_RDONLY);
+close(STDIN_FILENO);
+dup(fd);
+53
+dup() and dup2() System Calls
+fd = open(“/etc/passwd”, O_RDONLY);
+newfd = dup(fd);
+stdin
+stdout
+stderr
+fd
+newfd
+user file
+descriptor table
+0
+1
+2
+3
+4
+RD, 0
+tty
+/etc/passwd
+file table inode table
+54
+dup() and dup2() System Calls
+• Example
+#include <unistd.h>
+#include <fcntl.h>
+int main(void)
+{
+int fd;
+fd = creat("dup_result", 0644);
+dup2(fd, STDOUT_FILENO);
+close(fd);
+printf("hello world\n");
+return 0;
+}
+55
+dup() and dup2() System Calls
+#include <fcntl.h>
+#include <string.h>
+#include <unistd.h>
+main()
+{
+char *fname = "test.txt";
+int fd1, fd2, cnt;
+char buf[30];
+fd1 = open(fname, O_RDONLY);
+if(fd1 < 0) {
+perror(”open( )");
+exit (-1);
+}
+fd2 = dup(fd1);
+cnt = read(fd1, buf, 12);
+buf[cnt] = '\0';
+printf("fd1's printf : %s\n", buf);
+lseek(fd1, 1, SEEK_CUR);
+cnt = read(fd2, buf, 12);
+buf[cnt] = '\0';
+printf("fd2's printf : %s\n", buf);
+}
+56
+dup() and dup2() System Calls
+[test.txt의 내용]
+Hello, Unix! How are you?
+[수행 결과]
+fd1's printf : Hello, Unix!
+fd2's printf : How are you?
+57
+dup() and dup2() System Calls
+#include <fcntl.h>
+main()
+{
+char *fname = "test.txt";
+int fd;
+if((fd = creat(fname, 0666)) < 0) {
+perror("creat( )");
+exit(-1);
+}
+printf("First printf is on the screen.\n");
+dup2(fd,1);
+printf("Second printf is in this file.\n");
+}
+[수행 결과]
+$ a.out
+First printf is on the screen.
+$ cat test.txt
+Second printf is in this file.
+58
+lseek와 random access
+#include <sys/types.h>
+#include <unistd.h>
+off_t lseek(int fd, off_t offset, int start_flag);
+• read-write 포인터의 위치 변경
+• fd: file descriptor returned from open or creat
+• offset: relative offset
+• start_flag: – SEEK_SET, SEEK_CUR, SEEK_END
+• Return: – success: a new position in the file
+– fail: -1
+59
+lseek와 random access
+off_t newpos;
+.
+.newpos = lseek(fd, (off_t) –16, SEEK_END);
+filedes = open(filename, O_RDWR);
+lseek(filedes, (off_t)0, SEEK_END);
+write(filedes, outbuf, OBSIZE);
+off_t filesize;
+int filedes;
+.
+.filesize = lseek(filedes, (off_t)0, SEEK_END);
+60
+The Hotel Example(1)
+• residents: 호텔에 투숙한 사람들의 이름을 기록한 파일
+• 각 줄의 길이는 41개의 문자 (41번째는 '\n‘)
+/* getoccupier -- residents 화일로부터 투숙객의 이름을 얻는다. */
+#include <stdio.h>
+#include <fcntl.h>
+#include <unistd.h>
+#define NAMELENGTH 41
+char namebuf[NAMELENGTH]; /*이름을 보관할 버퍼 */
+int infile = -1; /*화일 기술자를 보관할 것임 */
+char *getoccupier(int roomno)
+{
+off_t offset;
+ssize_t nread;
+/* 화일을 처음으로 개방한다 */
+if ( infile == -1 &&
+(infile = open ("residents", O_RDONLY)) == -1)
+{
+return (NULL); /* 화일을 개방하지 못함 */
+}
+offset = (roomno -1) * NAMELENGTH; 61
+The Hotel Example(2)
+/* 방의 위치를 찾아 투숙객의 이름을 읽는다 */
+if (lseek(infile, offset, SEEK_SET) == -1)
+reurn (NULL);
+if ( (nread = read (infile, namebuf, NAMELENGTH)) <= 0)
+return (NULL);
+/* 개행문자를 널 종결자(terminator)로 대체하여 하나의 스트링을 생성하라. */
+namebuf[nread -1} = '\0';
+return (namebuf);
+}
+/* listoc -- 모든 투숙객의 이름을 리스트하라 */
+#define NROOMS 10
+main()
+{
+int j;
+char *getoccupier (int), *p;
+for ( j = 1; j<= NROOMS; j++)
+{
+if (p = getoccupier(j))
+printf ("Room %2d, %s\n", j, p);
+else
+printf ("Error on room %d\n", j);
+} } 62
+한 파일 끝에 자료 추가 하기
+/* 화일의 끝으로 이동 */
+lseek(filedes, (off_t)0, SEEK_END);
+write(filedes, appbuf, BUFSIZE);
+• 보다 일반적인 방법
+filedes = open(“yetanother”, O_WRONLY | O_APPEND);
+write(filedes, appbuf, BUFSIZE);
+63
+The unlink/remove System Call
+#include <unistd.h>
+int unlink(const char *pathname);
+#include <stdio.h>
+int remove(const char *pathname);
+• 파일의 제거
+• pathname: absolute or relative path name
+• Return: – success: 0
+– fail: -1
+• 디렉토리에 대해서는 remove 를 사용해야한다.
+64
+fcntl System Call
+#include <sys/types.h>
+#include <unistd.h>
+#include <fcntl.h>
+int fcntl(int fd, int cmd, ...);
+• fd: file descriptor returned from open or creat
+• cmd: F_GETFL, F_SETFL, …
+• Return: – success: an integer(>=0)
+• compute Return&O_ACCMODE
+• can be one of O_RDONLY, O_WRONLY, ... – fail: -1
+65
+fcntl System Call
+/* filestatus -- 화일의 현재 상태를 기술한다. */
+#include <fcntl.h>
+int filestatus(int filedes)
+{
+int arg1;
+if(( arg1 = fcntl (filedes, F_GETFL)) == -1)
+{
+printf ("filestatus failed\n");
+return (-1);
+}
+printf("File descriptor %d: ",filedes);
+/* 개방시의 플래그를 테스트한다. */
+switch ( arg1 & O_ACCMODE){
+case O_WRONLY:
+printf ("write-only");
+break;
+case O_RDWR:
+printf ("read-write");
+break;
+case O_RDONLY:
+printf ("read-only");
+break;
+default:
+printf("No such mode");
+}
+if (arg1 & O_APPEND)
+printf (" -append flag set");
+printf ("\n");
+return (0);
+}
+66
+Standard input, ouput and Error
+• Standard input, output and error – standard input(fd=0): keyboard
+– standard output(fd=1): terminal screen
+– standard error(fd=2): terminal screen
+• File redirections on UNIX shell – standard input redirection:
+$ command < file – standard output redirection:
+$ command > file – standard error redirection:
+$ command 2> file
+67
+I/O의 예
+/* io -- 표준 입력을 표준 출력으로 복사 */
+#include <stdlib.h>
+#include <unistd.h>
+#define SIZE 512
+main()
+{
+ssize_t nread;
+char buf[SIZE];
+while ( (nread = read (0, buf, SIZE)) > 0)
+write (1, buf, nread);
+exit (0);
+}
+68
+The Standard I/O Library
+• The file access system calls
+– The basis for all input and output by UNIX programs – The primitives to handle data only in the form of simple
+sequences of bytes
+• The standard I/O library
+– ANSI C standard
+– Offers many more facilities than the system calls – Offers efficient mechanisms – FILE instead of file descriptor – eg. fopen(), getchar(), putchar(), getc(), putc(), scanf(), printf(), …
+69
+fopen() Library
+#include <stdio.h>
+#include <stdlib.h>
+main()
+{
+FILE *stream;
+if ( ( stream = fopen ("junk", "r")) == NULL)
+{
+printf ("Could not open file junk\n");
+exit (1);
+}
+}
+70
+getc(), putc() Library
+#include <stdio.h>
+int getc(FILE *istream); /* istream으로부터 한 문자를 읽어라. */
+int putc(int c, FILE *ostream); /* ostream에 한 문자를 넣어라. */
+• 예
+int c;
+FILE *istream, *ostream;
+/* istream을 읽기전용으로 개방하고, ostream을 쓰기전용으로 개방하라. */
+.
+.while( ( c=getc(istream)) !=EOF)
+putc(c, ostream);
+71
+fprintf를 이용한 오류 메시지 출력
+#include <stdio.h> /*표준 에러의 정의를 위해 */
+.
+.fprintf(stderr, "error number %d\n", errno);
+/* notfound 화일 오류를 출력하고 퇴장(exit)한다. */
+#include <stdio.h>
+#include <stdlib.h>
+int notfound (const char *progname, const char *filename)
+{
+fprintf (stderr, "%s: file %s not found\n", progname, filename);
+exit (1);
+}
+72
+The errno variable and perror library
+• errno variable
+#include <errno.h>
+...
+if((fd=open("nonesuch", O_RDONLY))==-1)
+fprintf(stderr, "error %d\n", errno);
+... • perror library routine
+Program:
+... perror("error opening nonesuch");
+... Run:
+error opening nonesuch: No such file or directory
+73
+File System 연결(mount)
+• 파티션의 장점
+– 신뢰성(Reliability) 향상
+– 서로 다른 종류의 파일 시스템 지원 가능 (NT와 Ext2) – 같은 파일 시스템일지라도 access pattern에 따라 다른 설정 가
+능
+– 특정 프로세스에 의한 디스크 공간 독점 방지
+• 파티션을 지원하기 위해서는
+– 논리적인 하나의 파일 시스템이 실제로는 여러 디스크 or 파티
+션에 존재 가능
+74
+File System 연결(mount)
+• File system 생성
+– format: /usr/bin/superformat
+– create: /sbin/mke2fs
+• initializes superblock and group descriptor
+• defective block on the partition 확인
+• 각 블록의 inode bit map과 data bit map 초기화
+• 각 블록의 inode table 초기화
+• root directory 생성
+• lost+found directory 생성
+75
+File System 연결(mount)
+논리적인 파일 시스템
+76
+File System 연결(mount)
+• 기준점 설정
+– root file system
+– 커널이 항상 접근 가능
+– 꼭 필요한 시스템 명령(eg: ifconfig)들은 root file
+system에 존재
+• 파일 시스템 연결
+– mount: integrated into the directory hierarchy of the
+root file system
+– mounted point
+77
+File System 연결(mount)
+Virtual file system
+mount 명령
+mount 결과
+78
+File System 연결(mount)
+• mount 예
+79
+
+8장. 문맥상의 File, Directory,
+Device File
+2
+목 차
+• 다중 사용자 환경에서의 file
+• 다수의 이름을 갖는 file
+• File 정보의 획득: stat와 fstat
+• Directory
+• UNIX Device File
+User id, group id
+• File's ownership
+– Each file has a user id(uid) and a group id(gid)
+• User id
+– /etc/passwd 파일에 정의
+bluewing:x:35:10:/usr/home/bluewing:bin/sh
+(user name:passwd 표시:uid:gid:home directory:login shell) – Super user
+• user name = root
+• uid = 0
+• Group id
+– /etc/group에 정의
+3
+다중 사용자 환경
+4
+v 파일을 읽고, 쓰고, 실행할 수 있는 권한
+v 다중 사용자 시스템의 가장 기본적인 보안 기능
+login:user3
+login:user2
+kpu.co.kr
+상황 : kpu.co.kr이 회사의 공동 서버이다. user2와
+user3이 같은 부서 소속으로 부서 내부 문서를
+공유해야 하고, user1은 다른 부서 소속으로 다른
+두사람의 문서에 접근하지 못하도록 하려면 어떻게
+관리해야 할까?
+접근 권한
+login: user1
+다중 사용자 환경
+5
+v유닉스의 사용자 카테고리
+§ 소유자(Owner)
+일반적으로 파일을 생성한 사용자. 명령을 통해 변경할 수도
+있음
+• 그룹(Group)
+파일과 동일한 그룹에 속한 사용자들. 파일이 속한 그룹?
+일반적으로 파일을 생성한 사용자의 기본 그룹
+상위 디렉토리에 특수한 권한(setgid)이 부여된 경우 다른
+그룹으로 지정 명령을 이용하여 변경 가능
+• 기타 사용자(Others)
+소유자나 그룹 카테고리에 속하지 않은 모든 사용자들
+v 접근 권한은 카테고리 별로 다르게 부여
+File Permissions
+• UNIX 시스템은 멀티유저 시스템
+• 한 사용자의 사용이 다른 사용자에게 피해가 되지 않도록
+보호 장치를 마련 : 사용 권한 (permission)
+사용 권한
+읽 기
+파일의 경우
+파일 내용을
+볼 수 있음
+파일 내용 수정 가능
+파일 실행 가능
+디렉토리의 경우
+디렉토리 내용을
+볼 수 있음
+해당 디렉토리 내에서
+새 파일 수정 가능
+cd 명령으로 해당
+디렉토리로 이동 가능
+쓰 기
+실행
+6
+File Permissions
+파일의
+사용권한
+$ls –l stuff -rw-r—r– 1 hani users 505 Mar 13 19:05 stuff
+파일에 대한
+링크수
+파일의
+소유자 파일의
+그룹
+파일크기
+파일 작성 날짜
+파일이름
+파일의 종류
+(디렉토리(d), 심볼릭링크(l),
+블럭특수파일(b), 문자특수파일(c),
+FIFO파일(p), 일반파일(-))
+7
+File Permissions
+r w x r w x r w x
+소유자권한 그룹권한 다른 사용자 권한
+• 사용권한
+r
+w
+x
+-
+읽기 권한
+쓰기 권한
+실행 권한
+해당 권한 없음
+예) -rwxr-x--x -rw------- -rwxrwxrwx
+8
+File Permissions
+- a는 all을 의미
+- u는 user, 파일소유자
+- g는 group, 그룹
+- o는 other, 다른 사용자
+- +는 기능 설정
+- -는 기능 제거
+- r는 read 속성
+- w는 write 속성
+- x는 excute 속성
+- filenames는 속성이
+설정될 파일 이름
+• 기호에 의한 파일 사용 권한 설정
+• 형식 : chmod {a,u,g,o} {+-} {r,w,x} filenames
+• 설명
+9
+File Permissions
+• chmod 명령의 사용 예
+– $chmod a+r stuff – $chmod +r stuff – $chmod og-x stuff – $chmod u+rwx stuff – $chmod o-rwx stuff
+• 8진수를 사용한 예
+– $chmod 444 stuff – $chmod 200 stuff
+10
+File Permissions
+• euid, ruid, egid
+– effective user-id (euid, 유효 사용자 식별번호): 실제 소유권을 갖는 uid
+– real user-id (ruid, 진짜 사용자 식별번호): 프로세스를 실행시킨 uid
+• Permissions and file modes in <sys/stat.h>
+value symbolic mode permission
+------- ------------------ ------------------- 0400 S_IRUSR read by owner
+0200 S_IWUSR write by owner
+0100 S_IXUSR execute by owner
+0040 S_IRGRP read by group
+0020 S_IWGRP write by group
+0010 S_IXGRP execute by group
+0004 S_IROTH read by other
+0002 S_IWOTH write by other
+0001 S_IXOTH execute by other
+11
+File Permissions
+• Extra permission for executable files
+– 04000 S_ISUID set uid on execution (set user-id) – 02000 S_ISGID set gid on execution (set group-id) – 01000 S_ISVTX save text image (sticky bit)
+cf. /bin/passwd : -r-sr-sr-x root sys
+12
+File Creation Mask and umask System Call
+• Each process has a file creation mask
+fd=open(pathname, O_CREAT, mode);
+actually means
+fd=open(pathname, O_CREAT, (~mask)&mode); – 예: 현재 umask 값이 07인 경우
+• fd = open(“/tmp/newfile”, O_CREAT, 0644); • 실제 file mode는 0640이 된다.
+• The umask system call
+#include <sys/types.h>
+#include <sys/stat.h>
+mode_t umask(mode_t newmask); – newmask: new mask to set – Return: old mask
+13
+umask의 예
+#include <fcntl.h>
+#include <sys/stat.h>
+int specialcreat (const char *pathname, mode_t mode)
+{
+mode_t oldu;
+int filedes:
+/* 화일 생성 마스크를 0으로 설정 */
+if ( (oldu = umask(0)) == 1)
+{
+perror ("saving old mask");
+return (-1);
+}
+/* 화일을 생성한다 */
+if((filedes=open(pathname, O_WRONLY｜O_CREAT｜O_EXCL, mode))== -1)
+perror ("opening file");
+/* 비록 개방에 실패하더라도, 과거의 화일 모드를 복원한다. */
+if (umask (oldu) == -1)
+perror ("restoring old mask");
+/* 화일 기술자를 복귀한다. */
+return filedes;
+} 14
+Open과 file 허가 오류
+• open 과 파일허가 오류 번호: errno
+– EACCESS error(허가가 거부됨) – EEXIST error(file이 이미 존재함) – 예
+fd=open(pathname, O_WRONLY|O_CREAT|O_TRUNC, 0600);
+fd=open(pathname, O_WRONLY|O_CREAT|O_EXCL, 0600);
+15
+Determining File Accessibility
+• Check if a process can access the given file
+– Effective uid가 아닌 real uid에 준하여 process가 file에 접근할
+수 있는가를 알려줌. #include <unistd.h>
+int access(const char *pathname, int mode);
+– mode: R_OK, W_OK, X_OK
+– return:
+• success: 0
+• fail: -1
+16
+Determining File Accessibility
+/*access의 사용 예 */
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+main()
+{
+char *filename = "afile";
+if (access (filename, R_OK) == -1)
+{
+fprintf (stderr, "User cannot read file %s\n", filename);
+exit (1);
+}
+printf ("%s readable, proceeding\n", filename);
+/* 프로그램의 나머지 부분... */
+}
+17
+Changing Permission and Ownership
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
+int chmod(const char *pathname, mode_t newmode);
+int chown(const char *pathname, uid_t uid, gid_t gid);
+• newmode: permission mode
+• uid: user id
+• gid: group id
+• return: – success: 0
+– fail: -1
+• file의 소유자나 super user만 사용 가능
+18
+다수의 이름을 갖는 file(link)
+• Hard link and link count (링크 계수) – A file with multiple names can have many link counts – This saves disk space and ensures many people can access the
+same file
+– link and unlink system calls
+• The link system call
+#include <unistd.h>
+int link(const char *pathname, const char *pathname); – return:
+• success: 0
+• fail: -1
+• How to move a file
+– Use link and unlink system calls – Use rename system call
+19
+다수의 이름을 갖는 file(link)
+• 파일 계층 구조 (hierarchical structure)
+/
+usr dev etc var mnt vmunix
+src include lib bin member local
+jim tom mark sooni choijm
+test.txt sum.c work exam.txt
+real file
+20
+다수의 이름을 갖는 file(link)
+• link(“/usr/member/choijm/test.txt”,“/usr/member/jim/exam.txt”);
+disk block 1
+5 etc
+4 dev
+3 usr
+1 .
+1 ..
+9 mnt
+7 var
+6 vmunix
+i_mode
+time …. 1
+inode 1 disk block 7
+17 lib
+16 include
+12 src
+3 .
+1 ..
+23 member
+20 bin
+i_mode
+time …. 7
+inode 3
+25 local
+disk block 39
+37 mark
+33 tom
+32 jim
+23 .
+3 ..
+42 choijm
+41 sooni
+i_mode
+time …. 39
+inode 23
+inode for /
+21
+다수의 이름을 갖는 file(link)
+disk block 54
+63 sum.c
+62 work
+61 test.txt
+42 .
+i_mode 23 ..
+time …. 54
+inode 42
+disk block 81
+i_mode
+time
+nlink = 2 …. 81
+85
+87
+inode 61
+Real
+data
+disk block 85
+Real
+data
+disk block 87
+Real
+data
+disk block 55
+61 exam.txt
+32 .
+i_mode 23 ..
+time …. 55
+inode 32
+22
+다수의 이름을 갖는 file(link)
+0(stdin)
+1(stdout)
+2(stderr)
+3
+4
+User file descriptor
+table
+Process A
+…
+fd fd_flag ptr
+User file descriptor
+table
+Process B
+0
+1
+0
+0
+0
+1
+0
+1
+0
+0
+1
+0
+flag cnt offset ptr
+file table
+v-node table
+v-node 정보
+i-node 정보
+v-node 정보
+i-node 정보
+v-node 정보
+i-node 정보
+0(stdin)
+1(stdout)
+2(stderr)
+3
+4
+…
+fd fd_flag ptr
+23
+Program 예: move
+/* move -- 한 화일을 하나의 경로이름으로부터 다른 경로이름으로 옮긴다. */
+#include <stdlib.h>
+#include <stdio.h>
+#include <unistd.h>
+char *usage = "usage: move file1 file2\n";
+/* main은 명령줄에 의해 표준적인 방법으로 전달된 인수를 사용한다. */
+main (int argc, char **argv)
+{
+if (argc != 3)
+{fprintf (stderr, usage); exit (1);}
+if ( link (argv[1], argv[2] == -1)
+{ perror ("link failed");exit (1); }
+if (unlink (argv[1] == -1)
+{
+perror ("unlink failed"); unlink (argv[2]); exit (1);
+}
+24
+rename System Call
+include <stdio.h>
+int rename(const char *oldpathname, const char *newpathname);
+• return: – success: 0
+– fail: -1
+• regular file과 directory 이름의 재지정
+25
+unlink System Call
+unlink(“/usr/member/choijm/test.txt”);
+disk block 54
+63 sum.c
+62 work
+42 .
+i_mode 23 ..
+time …. 54
+inode 42
+disk block 81
+i_mode
+time
+nlink = 1 …. 81
+85
+87
+inode 61
+Real
+data
+disk block 85
+Real
+data
+disk block 87
+Real
+data
+disk block 55
+61 exam.txt
+42 .
+i_mode 23 ..
+time …. 55
+inode 32
+26
+Symbolic Link
+• Hard link's limitations – directory link and link across file systems are not allowed
+– Symbolic link 는 그 자체가 하나의 file임(자신이 링크되어 있는 file에
+대한 경로 수록) – Symbolic link에 의해 가르켜지고 있는 file 제거시: link가 끊어짐. • The symlink and readlink system calls
+#include <unistd.h>
+int symlink(const char *realname, const char *symname);
+int readlink(const char *sympath, char *buffer, size_t bufsize); – return of symlink: • success: 0, fail: -1
+– symname 그 자체에 들어있는 데이터를 볼 경우 readlink를 사용
+– buffer: place to put the result pathname (not NULL terminating) – bufsize: the size of buffer – return of readlink: • success: # of characters, fail: -1
+27
+File 정보의 획득: stat와 fstat
+• The stat and fstat system calls
+#include <sys/types.h>
+#include <sys/stat.h>
+int stat(const char *pathname, struct stat *buf);
+int fstat(int fd, struct stat *buf);
+– return:
+• success: 0
+• fail: -1
+28
+File 정보의 획득: stat와 fstat
+• Each file's properties are in the
+struct stat {
+dev_t st_dev; /* the logical device */
+ino_tst_ino; /* inode number */
+mode_t st_mode; /* permission and file type */
+nlink_t st_nlink; /* # of hard links */
+uid_tst_uid; /* user id */
+gid_tst_gid; /* group id */
+dev_t st_rdev; /* device if file is device */
+off_t st_size; /* logical file size */
+time_t st_atime; /* last data read time */
+time_t st_mtime;/* last data write time */
+time_t st_ctime; /* last stat write time */
+long st_blksize;/* I/O block size */
+long st_blocks; /* # of physical blocks */
+}
+29
+File 정보의 획득: stat와 fstat
+• Stat와 fstat의 예
+struct stat s;
+int filedes, retval;
+filedes = open("tmp/dina", O_RDWR);
+/* s는 이제 아래의 명령이나 ... */
+retval = stat("/tmp/dina", &s);
+/* 또는 아래의 명령에 의해 채워질 수 있다. */
+retval = fstat(filedes, &s);
+30
+stat와 fstat 예: filedata(1)
+/* filedata -- 한 화일에 관한 정보를 출력 */
+#include <stdio.h>
+#include <sys/stat.h>
+/* 허가 비트가 설정되어 있는지 결정하기 위해 octarray를 사용 * /
+static short octarray[9] = { 0400, 0200, 0100, 0040, 0020, 0010, 0004, 0002, 0001};
+/* 화일 허가에 대한 기호화 코드 끝부분의 null 때문에 길이가 10문자이다. */
+static char perms[10] = "rwxrwxrwx";
+int filedata (const char *pathname)
+{
+struct stat statbuf;
+char descrip[10];
+int j:
+if(stat (pathname, &statbuf) == -1)
+{
+fprintf (stderr, "Couldn't stat %s\n", pathname);
+return (-1);
+}
+31
+stat와 fstat 예: filedata(2)
+/* 허가를 읽기 가능한 형태로 바꾼다. */
+for(j=0; j<9; j++)
+{
+/ * 비트별 AND를 사용하여 허가가 설정되었는지 테스트 */
+if (statbuf.st_mode & octarray[j])
+descrip[j] = perms[j];
+else
+descrip[j] = '-';
+}
+descrip[9] = '\0'; /* 하나의 문자열을 가지도록 확인 */
+/* 화일 정보를 출력한다. */
+printf ("\nFile %s :\n", pathname);
+printf ("Size %ld bytes\n", statbuf.st_size);
+printf ("User-id %d, Group-id %d\n\n", statbuf.st_uid, statbuf.st_gid);
+printf ("Permissions: %s\n", descrip);
+return (0);
+}
+32
+stat와 fstat 예: lookout(1)
+/* lookout -- 화일이 변경될 때 메시지를 프린트 */
+#include <stdlib.h>
+#include <stdio.h>
+#include <sys/stat.h>
+#define MFILE 10
+void cmp(const char *, time_t);
+struct stat sb;
+main (int argc, char **argv)
+{
+int j;
+time_t last_time[MFILE+1];
+if(argc < 2)
+{
+fprintf (stderr, "usage: lookout filename ...\n"); exit (1);
+}
+if(argc > MFILE)
+{
+fprintf (stderr, "lookout: too many filenames\n"); exit (1);
+}
+33
+stat와 fstat 예: lookout(2)
+/* 초기화 */
+for (j=1; j<=argc; j++)
+{
+if (stat (argv[j], &sb) == -1)
+{ fprintf (stderr, "lookout: couldn't stat %s\n", argv[j]); exit (1);}
+last_time[j] = sb.st_mtime;
+}
+/* 화일이 변경될 때까지 루프 */
+for (;;)
+{
+for (j=1; j<=argc; j++)
+cmp (argv[j], last_time[j]);
+/*
+* 60초간 쉰다. * “sleep"는 표준 UNIX
+* 라이브러리 루틴이다. */
+sleep (60);
+}
+}
+34
+stat와 fstat 예: lookout(3)
+void cmp(const char *name, time_t last)
+{
+/* 파일에 관한 통계를 읽을 수 있는 한 변경시간을 검사한다. */
+if (stat(name, &sb) == 1 || sb.st_mtime ! = last)
+{
+fprintf (stderr, "lookout: %s changed\n", name);
+exit (0);
+}
+}
+35
+stat와 fstat 예: addx
+/* addx -- 화일에 수행허가를 추가 */
+#include <stdlib.h>
+#include <stdio.h>
+#include <sys/stat.h>
+#define XPERM 0100 / * 소유자에 대한 수행 허가 */
+main(int argc, char **argv)
+{
+int k; struct stat statbuf;
+/* 인수 리스트의 모든 화일에 대해 루프 */
+for (k=1; k<argc; k++)
+{
+/* 현행 화일 모드를 얻음 */
+if (stat (argv[k], &statbuf) == -1)
+{ fprintf (stderr, "addx: couldn't stat %s\n", argv[k]); continue;}
+/* 비트별 OR 연산을 사용하여 수행허가의 추가를 시도 */
+statbuf.st_mode | = XPERM;
+if (chmod (argv[k], statbuf.st_mode) == -1)
+fprintf (stderr, "addx: couldn't change mode for %s\n", argv[k]);
+} /* 루프의 끝 */
+exit (0);
+} 36
+Directory – User’s View
+• Home directory - The directory where a user is placed
+at login.
+• Current working directory - The directory where a user
+is currently working at.
+• File's pathname
+– Absolute - from the root directory (eg: /home/john/book) – Relative - from the currently working directory (eg:
+../john/book)
+37
+Directory
+• A directory is a list of an unique inode number and a
+file/directory name
+• An inode number represents an inode structure which
+contains file or directory's stat info (uid, gid, permission, size, date, ...) and address to actual data blocks
+• A directory contains a current directory(.) and a parent directory(..).
+• A directory can hold other directory as a subdirectory
+38
+Directory Permissions
+• Directory permission consists of read/write/execute.
+• Directory permission is interpreted differently from file
+permission. – Read - One can list file name or subdirectory name within the
+directory. (This does not mean one can read files) – Write - One can create new files and remove existing files within
+the directory. (This does not mean one can modify files) – Execute (search) - One can move into this directory using cd
+command or chdir system call. (To open a file or execute a file,
+one should have execute permissions on all directories leading to
+the file)
+39
+Directory의 생성 및 제거
+#include <sys/types.h>
+#include <sys/stat.h>
+int mkdir(const char *pathname, mode_t mode);
+#include <unistd.h>
+int rmdir(const char*pathname);
+• Return of mkdir: – Success: 0
+– Fail: -1
+• Return of rmdir: – Success: 0
+– Fail: -1
+40
+Directory의 열기 및 닫기
+#include <sys/types.h>
+#include <dirent.h>
+DIR *opendir(const char *dirname);
+#include <dirent.h>
+int closedir(DIR *dirptr);
+• Return of opendir: – Success: DIR * – Fail: NULL
+• Return of closedir: – Success: 0
+– Fail: -1
+41
+Directory의 열기 및 닫기
+#include <stdlib.h>
+#include <dirent.h>
+main()
+{
+DIR *dp;
+if ((dp = opendir("/tmp/dir1")) == NULL)
+{
+fprintf (stderr, "Error on opening directory /tmp/dir1\n");
+exit (1);
+}
+/* 디렉토리에 대한 코드를 처리한다. */
+.
+.closedir(dp);
+}
+42
+Directory 읽기
+#include <sys/types.h>
+#include <dirent.h>
+struct dirent *readdir(DIR *dirptr);
+void rewinddir(DIR *dirptr);
+• Return of readdir: – Success: struct dirent * – Fail (if no directory entry): NULL
+• Return of rewinddir: – None
+• struct dirent consists of d_ino and d_name.
+43
+Directory 예: my_double_ls
+#include <dirent.h>
+int my_double_ls (const char *name)
+{
+struct dirent *d;
+DIR *dp;
+/* 디렉토리를 개방하고, 실패여부를 점검함 */
+if ((dp=opendir(name)) == NULL) return (-1);
+/* 디렉토리를 살피면서 루프를 계속한다. 이때 inode 번호가 유효하면 디렉토리항을 프린트한다. */
+while (d = readdir(dp)) {
+if (d->d_ino !=0)
+printf ("%s\n", d->d_name);
+}
+/*이제 디렉토리의 시작으로 되돌아간다 ... */
+rewinddir(dp);
+/* ... 그리고 디렉토리를 다시 프린트한다. */
+while (d = readdir(dp)) {
+if (d->d_ino != 0)
+printf ("%s\n", d->d_name);
+}
+closedir (dp);
+return (0);
+}
+44
+Directory 예: find_entry(1)
+#include <stdio.h> /* NULL을 정의 */
+#include <dirent.h>
+#include <string.h> /* 스트링 함수를 정의 */
+int match(const char *, const char *);
+char *find_entry(char *dirname, char *suffix, int cont)
+{
+static DIR *dp=NULL;
+struct dirent *d;
+if (dp == NULL || cont == 0){
+if (dp != NULL}
+closedir (dp);
+if ((dp = opendir (dirname)) == NULL)
+return (NULL);
+}
+45
+Directory 예: find_entry(2)
+while (d = readdir(dp)) {
+if (d->d_ino == 0)
+continue;
+if (match (d->d_name, suffix))
+return (d->d_name);
+}
+closedir (dp);
+dp = NULL;
+return (NULL);
+}
+int match (const char *s1, const char *s2){
+int diff = strlen(s1)- strlen(s2);
+if (strlen(s1) > strlen(s2))
+return (strcmp(&s1[diff], s2) == 0);
+else
+return (0);
+}
+46
+Current Working Directory
+#include <unistd.h>
+int chdir(const char *path);
+char *getcwd(char *name, size_t size);
+• Return of chdir: – Success: 0
+– Fail: -1
+• name: place where the current directory name is copied into
+• Return of getcwd: – Success: name
+– Fail: NULL
+47
+Current Working Directory 예: my_pwd
+/* my_pwd -- 작업 디렉토리를 프린트한다.*/
+#include <stdio.h>
+#include <unistd.h>
+#define VERYBIG 200
+void my_pwd (void);
+main()
+{
+my_pwd();
+}
+void my_pwd (void)
+{
+char dirname[VERYBIG];
+if ( getcwd(dirname, VERYBIG) == NULL)
+perror("getcwd error");
+else
+printf("%s\n", dirname);
+} 48
+Walking a Directory Tree
+#include <ftw.h>
+int ftw(const char *path, int(*func)(), int depth);
+• Return of ftw: – Success: 0
+– Fail: -1 or non-zero value returned by func
+• func: a function called for each file/directory searched
+int func (const char *name, const struct stat *sptr, int type) {
+/* 함수의 내용 */
+}– type : 방문하는 객체의 type
+• FTW_F file
+• FTW_D directory
+• FTW_DNR directory that could not be read
+• FTW_SL symbolic link
+• FTW_NS not symbolic link, stat이 실행될 수 없는 객체
+• depth: # of file descriptors used
+49
+Walking a Directory Tree 예: list(1)
+#include <sys/stat.h>
+#include <ftw.h>
+int list(const char *name, const struct stat *status, int type)
+{
+/* 만일 stat 호출이 실패하면, 그냥 복귀한다. */
+if (type == FTW_NS)
+return 0;
+/* 아니면 객체 이름, 허가 그리고 만일 객체가 디렉토리이거나 상징형 링크이면 뒤에 “*”를 첨가한다. */
+if(type == FTW_F)
+printf("%-30s\t0%3o\n", name, status->st_mode&0777);
+else
+printf("%-30s*\t0%3o\n", name, status->st_mode&0777);
+return 0;
+}
+50
+Walking a Directory Tree 예: list(2)
+main (int argc, char **argv)
+{
+int list(const char *, const struct stat *, int);
+if (argc == 1)
+ftw (".", list, 1);
+else
+ftw (argv[1], list, 1);
+exit (0);
+}
+51
+UNIX Device Files
+• Special files - UNIX extends the file concept to cover
+the peripheral devices connected to a system. These
+peripheral devices such as printers, disk and even
+memory, are represented by filenames in the file
+structure. These can be accessed using UNIX file I/O
+system calls.
+52
+UNIX Device Files
+• Device files: each device has one file in /dev
+예: /dev/lp0, /dev/console, /dev/hda1
+• Device files can be used as regular files
+예: $ cat file > /dev/lp0
+• Block and character devices
+– Block(b) -disk, tape
+예: brw-rw---- 1 root disk 3,1 May 6 1998 /dev/hda1
+– Character(c) - terminal, modem, printer
+예: crw-rw---- 1 root daemon 6,0 May 6 1998 /dev/lp0
+• Major and minor device numbers
+– Major - device driver number – Minor - device port number
+53
+UNIX Device Files: 예
+#include<fcntl.h>
+main()
+{
+int i, fd;
+fd = open("/dev/tty00", O_WRONLY);
+for(i = 0; i< 100; i++)
+write(fd, "x", 1);
+close(fd);
+}
+54
+
+9장. Linker and Loader
+Reference
+•
+“시스템 소프트웨어 – 이론 및 실제”
+, 이기철, 표창우, 변
+영태, 생능 출판사, 5 장 연결 및 적재
+•
+“Computer Systems – a programmer’s perspective”,
+Randal E. Bryant and David O’Hallaron, Chap 7 Linking.
+•
+“시스템 소프트웨어와 리눅스 프로그래밍”
+, 전흥석, 홍릉
+과학출판사, 제3장 링커와로더
+2
+링커와 로더
+링킹(linking), 링커(linker)
+여러 개의 목적 프로그램을 연결하여 하나의 실행 가능한 프로그램을
+만드는 과정
+로더(loader)
+프로그램의 실행을 위하여 메모리에 적재
+링커 어셈블러
+컴파일러 로더
+목적프로그램 실행프로그램 주기억장치
+3
+링커와 로더의 설계
+• 링커와 로더의 연관 관계
+– 링커와 로더의 개념은 독립적이나 구현은 통합적 설계 가능
+– 링크의 시기가 중요한 문제
+• 링크의 가능 시기
+– 소스 프로그램의 작성 중
+– 소스 프로그램 작성 후 번역 전
+– 소스 프로그램의 컴파일 과정 중
+– 번역 후 적재 전
+– 적재 중
+– 적재 후 실행 전
+– 실행 중
+4
+링커와 로더의 설계
+• 일반적 링크 시기
+– 적재 중
+• 프로그램을 실행하는 시점에 연결을 시도
+• 연결 로더 (linking loader) 혹은 로더
+– 번역 후 적재 전
+• 번역된 목적 프로그램을 연결하여 하나의 실행 프로그램을 생성
+• 연결 편집기 (linkage editor) 혹은 링커
+• 모듈 적재기 (module loader) 추가 필요
+– 실행 모듈을 메모리로 적재
+5
+연결로더와 연결편집기
+연결 로더(linking loader) 연결 편집기(linkage editor)
+목적
+프로그램
+목적
+프로그램 표준함수
+연결로더
+목적
+프로그램
+목적
+프로그램 표준함수
+연결편집기
+메모리 적재
+적재모듈
+모듈적재기
+메모리 적재
+6
+연결 로더
+• 연결 로더
+– 절대 로더
+• absolute loader
+• 절대 프로그램을 적재하는 로더
+– 재배치 로더
+• relocation loader
+• 재배치 가능한 프로그램을 적재하는 로더
+7
+절대 로더
+P1 시작주소 = 0, 길이 = 5,000
+p2 시작주소 = 1,000, 길이 = 2,000
+P1
+0
+5,000
+10,000 가) 절대 로더
+P1
+0
+5,000
+10,000 나) 재배치 로더
+P2
+7,000
+8
+절대 로더
+• 절대 로더
+– 절대 프로그램 (absolute program) – 절대 로더 알고리즘
+– 부트스트랩 로더 (bootstrap loader)
+시작
+헤더 레코드를 읽어 프로그램 관련 정보를 파악한다. 텍스트 레코드를 차례로 읽어 들여 지정된 메모리 위치로 복사한다. 프로그램 시작 주소로 분기한다. 끝
+9
+재배치로더
+• 재배치 (relocation) – 프로그램의 실행 시 할당받은 주기억 장치의 주소를 고려하여
+프로그램의 주소 중 필요한 부분을 주기억 장치의 주소와 관련
+하여 변환하는 작업
+• 재배치 프로그램 (relocatable program) – 메모리의 어느 위치에 적재되어도 실행 가능한 프로그램
+• 재배치 로더 (relocation loader) – 재배치 가능한 프로그램 을 적재하는 로더
+10
+재배치 문제
+• 재배치 문제 (Relocation problem) – 프로그램 재배치
+• Relocatable program/module
+프로그램 A
+프로그램 A
+0
+1000 1000
+2000
+프로그램 A
+11
+재배치 문제
+• 재배치 문제 (Relocation problem) – 프로그램 재배치 문제 예제
+– 해결 방안
+• 수정 주소 = 프로그램내의 상대주소 + 프로그램 적재 시작 주소
+.
+. jump to 800
+.
+.
+. jump to 800
+.
+0
+1000 1000
+2000
+1004
+.
+. jump to 800
+.
+12
+재배치 로더
+재배치 전략
+프로그램
+수정된 프로그램
+재배치로더
+수정 레코드 기법
+비트 마스크 기법
+베이스
+레지스터
+이용
+하드웨어 전략
+주기억장치
+13
+재배치 로더
+• 수정 레코드 기법
+– Modification record scheme
+– 프로그램이 재배치되어 적재될 때 변경되어야 할 부분에 대한
+정보를 목적 코드에 수정 레코드(modification record or
+relocation dictionary)로 추가
+– 간단한 해결 방법
+– 직접 주소 (direct addressing)가 빈번할 경우 비효율
+14
+재배치 로더
+• 비트 마스크 기법
+– Bit mask scheme
+– 주소 필드 대신에 비트-벡터 (bit-vector) 사용
+• 각 기계어 명령어 마다 하나의 재배치 비트 적용
+– 재배치 대상을 1로 설정
+» 예) 1101100 : 1,2,4,5 번째 기계명령어를 재배치 시
+수정 대상
+– 장점
+• 재배치 대상과 관계없이 재배치를 위한 추가 코드 크기 일정
+– 단점
+• 소프트웨어적 해결의 한계로 인한 성능
+15
+재배치 로더
+• 베이스 레지스터 이용 방법
+– 하드웨어적인 해결 방법
+– 프로그램상의 모든 메모리 참조를 상대주소로 간주
+– 적용 방법
+• 베이스 레지스터에 프로그램의 적재 시작 주소를 저장
+• 프로그램 실행 시 모든 메모리 참조에 베이스 레지스터의 주소 값
+을 더하여 실행
+16
+연결편집기(Linkage Editor)
+• 객체 모듈들을 연결하여 한 개의 적재 모듈 생성
+• 객체 모듈 (object module) – 언어 번역기 (compiler, assembler) 의 출력 (*.o files) – 기계어 코드, 재배치 정보, 외부 심볼들의 정의, 외부 심볼 사용
+테이블. – Next slide
+• External Symbol Dictionary (ESD) – 외부 심볼 사전
+• Text – 텍스트
+• Relocation Dictionary (RLD) – 재배치 사전
+• END record
+17
+객체모듈/적재모듈
+외부 심볼 사전 (ESD)
+텍스트 (TEXT)
+재배치 사전(RLD)
+END 레코드
+가) 객체 모듈의 형태
+합성된 외부 심볼 사전 (ESD)
+텍스트 (TEXT)
+재배치 사전(RLD)
+모듈 끝 (EOM) 레코드
+나) 적재 모듈의 형태
+텍스트 (TEXT)
+재배치 사전(RLD) . . . . .
+18
+외부 심볼 문제
+• 외부 심볼 문제 (External symbol) – 하나의 큰 프로그램을 여러 개의 파일로 분할 작성 및 통합
+• 제어섹션 (control section) – 서로 다른 파일로 작성된 목적 코드
+• 각각의 파일을 개별적 기계어로 번역 후 이들의 연결 작업 필요
+– 외부 심볼
+• 서로 다른 파일이나 모듈내의 변수나 함수 등을 참조
+– 문제
+• 다른 파일의 심볼을 참조하는 경우 심볼에 해당하는 변환 주소값을 알지
+못하는 문제 발생
+19
+외부심볼문제
+• 외부 심볼 문제의 해결 방안
+– 어셈블러와 로더의 협력을 통해 해결
+• 어셈블러는 외부 심볼에 대한 정보를 취합하여 이를 로더에게 전달
+– 수정될 심볼들에 대한 목록 정보
+– 외부 심볼에 대한 정의 정보
+– 외부 심볼 참조 정보
+20
+외부심볼문제
+• 외부 심볼 문제의 해결 방안
+– 어셈블러
+• 외부 심볼에 대한 정보를 목적 코드에 추가하여 로더에게 전달
+– 정의 레코드: 각 제어섹션에서 정의된 외부 심볼의 이름과 제어섹션 내에서의
+상대 주소 정보
+– 참조 레코드: 각 제어 섹션에서 참조되고 있는 외부 심볼의 이름
+– 수정 레코드: 수정되어야 할 외부 심볼의 이름과 수정될 필드의 시작 주소 및
+수정될 필드의 길이
+– 로더
+• 모든 외부 심볼에 대해 정의 레코드에서 상대 주소 정보 파악
+• 외부 심볼의 주소 수정
+– 수정 주소 = 상대 주소 + 제어 섹션의 시작 주소
+21
+Load Module (적재 모듈)
+• 여러 개의 Object module로 부터 적재 가능한 모듈(load
+module) 형성
+• Load Module 형성 과정
+– 주소 배정
+• 각 입력 모듈 (Object module)에 연속적인 상대 주소를 배정 한다. • 각 입력 모듈의 ESD를 혼합 하여 한 개의 CESD (Composite External
+Symbol Dictionary)를 작성 한다. • 모든 SD(Segment Definition), ER(External Reference), LD(Local
+Definition) 형의 레코드의 “주소” 에 새로이 배정된 주소를 기록한다.
+22
+Load Module (적재 모듈)
+• Load Module 형성 과정 (Cont’d) – 주소 상수의 재배치
+• RLD에 있는 “정의된 곳” 과 “사용된 곳”을 새로 형성된 CESD를
+기준으로 고친다. • RLD의 새 “주소” = “주소” + “사용된 곳” CESD 레코드의 시작주
+소
+• V-형 : “정의된 곳” CESD 레코드의 시작주소 값을 텍스트에 있는
+“주소” 위치에 기록한다. – 만약 그 CESD 형이 여전히 ER 이면 에러. • A-형 : 새 “주소"위치의 값 = “주소”위치의 값 + “정의된 곳” CESD 레코드의 시작주소 값.
+23
+Relocation Dictionary (RLD)
+• Example I : Object module A
+A SD 0 600
+BYUN LD 300 1
+B ER ? ?
+3 1 V 400
+ESD
+TEXT
+RLD
+0 A CSECT
+ENTRY BYUN
+:
+300 BYUN …
+:
+400 DC V(B)
+:
+0
+:
+24
+Relocation Dictionary (RLD)
+• Example II : Object Module B
+B SD 0 500
+BYUN ER ? ? ESD
+TEXT
+RLD
+0 B CSECT
+:
+200 pyo …
+:
+300 DC A(pyo)
+304 DC V(BYUN)
+:
+200
+0
+:
+1 1 A 300
+2 1 V 304
+25
+Load Module (적재 모듈)
+• Load Module: A & B A SD 0 600
+BYUN LD 300 1
+B SD ? 600 ? 500
+3 1 V 400
+CESD
+TEXT
+RLD
+0 A CSECT
+ENTRY BYUN
+:
+300 BYUN …
+:
+400 DC V(B)
+600 B CSECT
+:
+800 pyo …
+:
+900 DC A(pyo)
+904 DC V(BYUN)
+:
+0 600
+:
+1 3 1 3 A 300 900
+2 1 3 V 304 904
+:
+200 800
+0 300
+TEXT
+RLD
+26
+What Does a Linker Do?
+• Merges object files – Merges multiple relocatable (.o) object files into a single executable
+object file that can loaded and executed by the loader.
+• Resolves external references – As part of the merging process, resolves external references. • External reference: reference to a symbol defined in another object file.
+• Relocates symbols – Relocates symbols from their relative locations in the .o files to
+new absolute positions in the executable. – Updates all references to these symbols to reflect their new positions. • References can be in either code or data
+– code: a(); /* reference to symbol a */ – data: int *xp=&x; /* reference to symbol x */
+27
+Example C Program
+int e=7;
+int main() {
+int r = a();
+exit(0);
+}
+m.c a.c
+extern int e;
+int *ep=&e;
+int x=15;
+int y;
+int a() {
+return *ep+x+y;
+}
+28
+Merging Relocatable Object Files into an Executable File
+main() m.o
+int *ep = &e
+a()
+a.o
+int e = 7
+headers
+main()
+a()
+0 system code
+int *ep = &e
+int e = 7
+system data
+more system code
+int x = 15
+int y
+system data
+int x = 15
+Relocatable Object Files Executable Object File
+.text
+.text
+.data
+.text
+.data
+.text
+.data
+.bss .symtab
+.debug
+.data
+uninitialized data .bss
+system code
+29
+Relocating Symbols and Resolving External References
+– Symbols are lexical entities that name functions and variables. – Each symbol has a value (typically a memory address). – Code consists of symbol definitions and references. – References can be either local or external.
+int e=7;
+int main() {
+int r = a();
+exit(0);
+}
+m.c a.c
+extern int e;
+int *ep=&e;
+int x=15;
+int y;
+int a() {
+return *ep+x+y;
+}
+Def of local
+symbol e
+Ref to external
+symbol exit
+(defined in
+libc.so)
+Ref to
+external
+symbol e Def of
+local
+symbol
+ep
+Defs of
+local
+symbols x
+and y
+Refs of local
+symbols ep,x,y
+Def of
+local
+symbol a
+Ref to external
+symbol a
+30
+Strong and Weak Symbols*
+• Program symbols are either strong or weak
+– strong: procedures and initialized globals – weak: uninitialized globals
+int foo=5;
+p1() {
+}
+int foo;
+p2() {
+}
+p1.c p2.c
+strong
+weak
+strong
+strong
+31
+Linker’s Symbol Rules*
+• Rule 1. A strong symbol can only appear once.
+• Rule 2. A weak symbol can be overridden by a
+strong symbol of the same name. – references to the weak symbol resolve to the strong symbol.
+• Rule 3. If there are multiple weak symbols, the linker
+can pick an arbitrary one.
+32
+Linker Puzzles*
+int x;
+p1() {}
+int x;
+p2() {}
+int x;
+int y;
+p1() {}
+double x;
+p2() {}
+int x=7;
+int y=5;
+p1() {}
+double x;
+p2() {}
+int x=7;
+p1() {}
+int x;
+p2() {}
+int x;
+p1() {} p1() {} Link time error: two strong symbols (p1)
+References to x will refer to the same
+uninitialized int. Is this what you really want?
+Writes to x in p2 might overwrite y!
+Evil!
+Writes to x in p2 will overwrite y!
+Nasty!
+Nightmare scenario: two identical weak structs, compiled by different compilers
+with different alignment rules.
+References to x will refer to the same initialized
+variable.
+33
