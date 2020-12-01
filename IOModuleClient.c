@@ -43,7 +43,11 @@ long mypid; /*main에서 한 번 write하고 쓰레드에서는 읽기만 함으
 struct stat sb; /*code.txt 파일의 상태를 저장함, 한 번 저장되면 읽기만 함으로 동기화 필요없음 */
 long long fileSize;
 int codeFd; /*code.txt 파일의 파일디스크립터*/
-sem_t printer;
+pthread_cond_t printer1;
+pthread_cond_t printer2;
+pthread_cond_t printer3;
+pthread_mutex_t printlock;
+int endNum;
 /* 이 함수를 사용하면 에러처리를 위해 프로그램을 exit() 시키기 전에 FIFO파일이나 link파일을 삭제시켜줄 수 있다.*/
 void error_handler(char * FileName){
     	if(FileName!=null)
@@ -59,7 +63,10 @@ int main()
     int protocol;
 
 	memset(buf,0x00,BUF_SIZE);
-	sem_init(&printer, 0, 0);
+	pthread_cond_init(&printer1,NULL);
+	pthread_cond_init(&printer2,NULL);
+	pthread_cond_init(&printer3,NULL);
+	pthread_mutex_init(&printlock,NULL);
     /*2. open managefifo file 만약 파일이 없다면 {T}시간 동안 스핀하며 대기한다.*/
     //{T} 시간 측정 시작
     while((protocol = open("./managefifo", O_APPEND | O_WRONLY)) < 0){
@@ -92,7 +99,7 @@ int main()
 	//실패 시 에러처리 추가
           pthread_join(thread[i],NULL);
     }
-	sem_destroy(&printer);
+
     pthread_exit(1);
 }
 
@@ -153,10 +160,10 @@ void* filesend(void* arg){
 		printf("fail to call fcntl()\n");
 		error_handler(linkFileName);
 	}
-
+	int totalfilereadlen = 0;
     for(int i = 0 ;i < (fileSize/THREADNUM)/BUF_SIZE;i++){
         
-        if(read(linkFd,buf,BUF_SIZE)<0){
+        if((readlen=read(linkFd,buf,BUF_SIZE))<0){
             printf("fail to call read()\n");
             error_handler(linkFileName);
         }
@@ -164,8 +171,9 @@ void* filesend(void* arg){
             printf("fail to call write()\n");
             error_handler(linkFileName);
         }
+	totalfilereadlen += readlen;
     }
-    if(read(linkFd,buf,(fileSize/THREADNUM)%BUF_SIZE)<0){
+    if((readlen=read(linkFd,buf,(fileSize/THREADNUM)%BUF_SIZE))<0){
         printf("fail to call read()\n");
         error_handler(linkFileName);
     }
@@ -173,7 +181,7 @@ void* filesend(void* arg){
         printf("fail to call read()\n");
         error_handler(linkFileName);
     }
-    
+	totalfilereadlen+=readlen;
 	fifo_lock.l_type = F_UNLCK;
 	if(fcntl(fifo2Ser,F_SETLK,&fifo_lock)==-1){
 		printf("fail to call write()\n");
@@ -185,20 +193,36 @@ void* filesend(void* arg){
 	//8. client의 1번 쓰레드는 "{자신의 PID}FIFO12cli"의 내용을 읽고 출력한다.
 	//9. 8이 끝나면 client의 2번 쓰레드는 "{자신의 PID}FIFO22cli"의 내용을 읽고 출력한다.
 	//10. 9가 끝나면 client의 3번 쓰레드는 "{자신의 PID}FIFO32cli"의 내용을 읽고 출력한다.
-	int c;
-	sem_getvalue(&printer,&c);	
-	while(c != (n-1)){
-		sem_getvalue(&printer,&c);	
+
+	pthread_mutex_lock(&printlock);
+	if(n==1)
+		printf("\n\nThread1 Print Start\n\n");
+	if((n==2)&&(endNum!=1)){
+		pthread_cond_wait(&printer2,&printlock);
+		printf("\n\nThread2 Print Start\n\n");
 	}
-	int readflag=0;
-	while(readflag==0){
-	 	while((readlen=read(fifo2Cli,buf,BUF_SIZE))>0){
-			printf("%s",buf);
-			fflush(stdout);
-			readflag=1;
-		}
+	else if((n==3)&&(endNum!=2)){
+		pthread_cond_wait(&printer3,&printlock);
+		printf("\n\nThread3 Print Start\n\n");
 	}
-    	sem_post(&printer);
+	
+	int totallen=0;
+	while((readlen=read(fifo2Cli,buf,BUF_SIZE))>0){
+		printf("%s",buf);
+		totallen+=readlen;
+		
+	}
+	fflush(stdout);
+	if(n==1){
+		endNum=1;
+		pthread_cond_signal(&printer2);
+	}
+	if(n==2){
+		endNum=2;
+		pthread_cond_signal(&printer3);
+	}
+	pthread_mutex_unlock(&printlock);
+	printf("filesize = %d Thread %d, fileread: %d byte, rcv: %d byte\n",fileSize,n,totalfilereadlen, totallen);
 	unlink(linkFileName);
 	    
 }

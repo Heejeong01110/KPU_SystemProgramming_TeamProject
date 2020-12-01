@@ -26,6 +26,7 @@
 #include <string.h>
 #include <pthread.h>
 #include <semaphore.h>
+#include <signal.h>
 
 #define BUF_SIZE 4096
 #define FILENAMESIZE 200
@@ -41,6 +42,7 @@ struct threadArg{
 	int number;
 };
 
+
 /* 이 함수를 사용하면 에러처리를 위해 프로그램을 exit() 시키기 전에 FIFO파일이나 link파일을 삭제시켜줄 수 있다.*/
 void error_handler(char * FileName1, char * FileName2, char * FileName3, char * FileName4){
     	if(FileName1!=null)
@@ -52,6 +54,10 @@ void error_handler(char * FileName1, char * FileName2, char * FileName3, char * 
 	if(FileName4!=null)
         	unlink(FileName4);
 	pthread_exit(0);
+}
+void signalhandler(int sig) {
+	error_handler("./managefifo",null,null,null);
+	exit(0);
 }
 
 void decoding(char code[],int len)
@@ -89,7 +95,7 @@ int main()
         printf("fail to make fifo manage()\n");
         error_handler("./managefifo",null,null,null);
     }
-    
+    signal(SIGINT, signalhandler);
     
    while(1){
         /*3. server는 managefifo에 있는 요청 메시지("request {자신의 PID} {파일 크기}")를 확인하면 응답을 위해 3개의 쓰레드를 할당하고*/
@@ -186,11 +192,14 @@ void* filerecv(void * arg){
 	}
 	
 	lseek(tempfd,0,SEEK_SET);
+	int totallen=0;
 	while((readlen=read(tempfd,buf,BUF_SIZE))>0){
 		write(fifo2Cli,buf,readlen);
-		printf("send:\'%s\' readlen: %d\n",buf,readlen);
+		totallen+=readlen;
+		
 	}
 	
+	//fflush(fifo2Cli);
 	fifo_lock.l_type = F_UNLCK;
 	if(fcntl(fifo2Cli,F_SETLK,&fifo_lock)==-1){
 		printf("fail to call fcntl(unlock)\n");
@@ -198,7 +207,8 @@ void* filerecv(void * arg){
 	}
 	
 	
-
+	printf("Thread %d, send: %d byte\n",argument->number,totallen);
+	fflush(stdout);
 	unlink(fifo2SerFileName);
 	unlink(fifo2CliFileName);
 	unlink(tempFileName);
