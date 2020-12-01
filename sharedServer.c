@@ -23,9 +23,10 @@ struct threadArg{
 	int number;
 };
 
+static int SharedMemoryManageCreate(int kNum);
 static int SharedMemoryCreate(int kNum);
-static int SharedMemoryWrite(int shmid, char *shareddata, int size);
-static int SharedMemoryRead(int shmid, char *sMemory);
+static int SharedMemoryWrite(int shmid, char *sMemory, int size);
+static int SharedMemoryRead(int shmid,char *sMemory);
 static int SharedMemoryFree(int shmid);
 
 int clientCnt=0;
@@ -33,20 +34,28 @@ int clientCnt=0;
 void* filerecv(void* arg);
 pthread_t thread[3];
 
+//공유메모리  매핑
+/*
+management 에서 
+
+*/
+
+
 int main(void){
     struct threadArg * argument;
     char recvbuffer[MEM_SIZE];
     //char sendbuffer[MEM_SIZE] = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     /*1. manage sharedmemory 생성*/ //client 접속시 clientCnt 증가시킴s
-    int ManageShmid = SharedMemoryCreate(KEY_NUM);
+    int ManageShmid = SharedMemoryManageCreate(KEY_NUM);
     
-    //fork?
+    //fork?recvbuf[0]==0)
+    
     while(1){
         SharedMemoryRead(ManageShmid,recvbuffer);
-        if(recvbuffer[0]=='h'){
+        if(recvbuffer[0]==0){}
+        else{
             clientCnt++;
             //값이 들어왔을 경우 스레드 생성
-
             for (int i = 0; i < 3; i++) {
                 argument = (struct threadArg *)malloc(sizeof(struct threadArg));
 	    	    argument->tshmid = clientCnt*10 + i+1;
@@ -54,14 +63,18 @@ int main(void){
 		        pthread_create(&thread[i], NULL, (void*)filerecv, (void *)argument);
                 
 	        }
-            sprintf(recvbuffer,"");
-            break;    
+            SharedMemoryWrite(ManageShmid,"",sizeof(""));
+            break;
         }
-        //printf("X");
     }
     
-    sleep(4);
-    //SharedMemoryWrite(ManageShmid,sendbuffer, sizeof(sendbuffer));
+    //sleep(4);
+    SharedMemoryFree(ManageShmid);
+    for(int i=0;i<=3;i++)
+     {
+          pthread_join(thread[i],0);
+     }
+
     return 0;
 }
 
@@ -76,24 +89,56 @@ void* filerecv(void * arg){
     int tshmid;
 	int number;
     */
+    threadShmid = argument->tshmid;
     
 	/*3. 각 쓰레드는 1개의 shm 생성.*/
-    int tid = SharedMemoryCreate(argument->tshmid);
-	printf("thread 생성 %d\n",argument->tshmid);
+    int tid = SharedMemoryCreate(threadShmid);
+	//printf("thread 생성 %d\n",threadShmid);
     
     //client에서 보내는 파일 받기
-
     while(1)
     {
         SharedMemoryRead(tid,recvbuf);
-        if(recvbuf[0]=='a'){
-            printf("success %d: %s\n",tid, recvbuf);
+        if(recvbuf[0]==0){
+            
+        }else{
+            printf("success %d: %s",threadShmid, recvbuf);
             break;
         }
     }
-    printf("while end\n");
 
-	pthread_exit(0);
+    //printf("thread %d read while end\n",threadShmid);
+
+    SharedMemoryFree(tid);
+
+}
+
+static int SharedMemoryManageCreate(int kNum) //manage는 무조건 서버에서 새로생성할 필요가 있는거같다
+{
+    int shmid;
+    if((shmid = shmget((key_t)kNum, MEM_SIZE, IPC_CREAT| IPC_EXCL | 0666)) == -1) {
+        //IPC_CREATE - key에 해당하는 메모리가 없으면 공유메모리를 생성한다.
+        //IPC_EXCL - 공유메모리가 있으면 실패로 반환 
+        //클라이언트 측에서 이미 생성
+        shmid = shmget((key_t)kNum, MEM_SIZE, IPC_CREAT| 0666);
+        if(shmid == -1)
+        {
+            printf("error1");
+            return -1;
+        }
+        else
+        {   
+            SharedMemoryFree(shmid);
+            shmid = shmget(kNum, MEM_SIZE, IPC_CREAT| 0666);
+            if(shmid == -1)
+            {
+                printf("error2");
+                return 1;
+            }
+            return shmid;
+        }
+    }
+    return shmid;
 }
 
 
@@ -106,47 +151,38 @@ static int SharedMemoryCreate(int kNum) //성공시 shmid 리턴
     if((shmid = shmget((key_t)kNum, MEM_SIZE, IPC_CREAT| IPC_EXCL | 0666)) == -1) {
         //IPC_CREATE - key에 해당하는 메모리가 없으면 공유메모리를 생성한다.
         //IPC_EXCL - 공유메모리가 있으면 실패로 반환 
-        shmid = shmget((key_t)kNum, MEM_SIZE, IPC_CREAT| 0666);
-        if(shmid == -1)
-        {
-            return -1;
-        }
-        else
-        {
-            SharedMemoryFree(shmid);
-            shmid = shmget(kNum, MEM_SIZE, IPC_CREAT| 0666);
-            if(shmid == -1)
+        //클라이언트 측에서 이미 생성
+        while(1){ 
+            if((shmid = shmget((key_t)kNum, 0, 0))==-1)
             {
-                //perror("Shared memory create fail");
-                return 1;
+                //perror("write Shmat failed");
+            }else{
+                //printf("클측 생성 연결 성공%d\n",kNum);
+                return shmid;
             }
         }
     }
+    //서버측에서 정상적으로 만든경우
+    //printf("서버측 생성 연결 성공%d\n",kNum);
     return shmid;
 }
  
-static int SharedMemoryWrite(int shmid, char *shareddata, int size)
+static int SharedMemoryWrite(int shmid, char *sMemory, int size)
 {
     void *shmaddr;
-    
-    //공유메모리 연결
-    //shmctl(shmid, SHM_LOCK, 0);
-    if((shmaddr = shmat(shmid, (void *)0, 0)) == (void *)-1) 
-    {
-        //perror("writeShmat failed");
-        return 1;
+    while(1){ 
+        if((shmaddr = shmat(shmid, (void *)0, 0)) == (void *)-1)
+        {
+            //연결 될때까지 무한루프
+        }else{
+            sprintf((char*)shmaddr,sMemory);
+            if(shmdt(shmaddr) == -1)
+            {
+                printf("error3");
+            }
+            return 0;
+        }
     }
-    //printf("in write test :%s\n",shareddata);
-    strncpy(shmaddr, shareddata,sizeof(shareddata));
-    //memcpy((char *)shmaddr, shareddata, sizeof(shareddata));
-    //printf("in write test shmaddr :%s\n",(char *)shmaddr);
-    if(shmdt(shmaddr) == -1) 
-    //프로세스에서 공유메모리 분리
-    {
-        //perror("Shmdt failed");
-        return 1;
-    }
-    //shmctl(shmid, SHM_UNLOCK, 0);
     return 0;
 }
 
@@ -154,18 +190,17 @@ static int SharedMemoryWrite(int shmid, char *shareddata, int size)
 static int SharedMemoryRead(int shmid,char *sMemory)
 {
     void *shmaddr;
-    if((shmaddr = shmat(shmid, (void *)0, 0)) == (void *)-1)
-    {
-        //perror("read Shmat failed");
-        return 1;
-    }
-    //printf("%s ",(char*)shmaddr);
-    sprintf(sMemory,shmaddr);
-    //printf("%s",sMemory);
-    if(shmdt(shmaddr) == -1)
-    {
-        //perror("Shmdt failed");
-        return 1;
+    while(1){ 
+        //연결 될때까지 무한루프
+        if((shmaddr = shmat(shmid, (void *)0, 0)) == (void *)-1){}
+        else{
+            sprintf(sMemory,shmaddr);
+            if(shmdt(shmaddr) == -1)
+            {
+                printf("error4");
+            }
+            return 0;
+        }
     }
     return 0;
 }
@@ -181,3 +216,4 @@ static int SharedMemoryFree(int shmid)
     //printf("Shared memory end\n");
     return 0;
 }
+

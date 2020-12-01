@@ -21,9 +21,11 @@
 #define T 5
 #define FILENAMESIZE 255
 
+static int SharedMemoryManageInit(int kNum);
 static int SharedMemoryInit(int kNum);
 static int SharedMemoryWrite(int shmid,char *sMemory, int size);
 static int SharedMemoryRead(int shmid,char *sMemory);
+static int SharedMemoryFree(int shmid);
 
 
 
@@ -32,73 +34,76 @@ pthread_t thread[3];
 
 int main() {
 
-	 char sendbuffer[MEM_SIZE] = "hello";
+	 char sendbuffer[MEM_SIZE] = "hello\n";
     char recvbuffer[MEM_SIZE];
     int ManageShmid;
     
-    ManageShmid= SharedMemoryInit(KEY_NUM);
+    ManageShmid= SharedMemoryManageInit(KEY_NUM);
     
-    
-
     SharedMemoryWrite(ManageShmid,sendbuffer,sizeof(sendbuffer));
     
-    printf("manage 연결 성공\n");
 
     /*4. 3개의 쓰레드를 할당*/
     for(int i=0;i<3;i++){
 	//실패 시 에러처리 추가 
-        printf("%d thread 시작 전\n",i);
-        pthread_create(&thread[i],NULL,(void *)filesend, (void *)(i+1));
-        sleep(1);
+        printf("thread %d\n",i);
         
+        pthread_create(&thread[i],NULL,(void *)filesend, (void *)(i+1));        
     }
-
-    /*
-    //recv
-    while(1)
-    {
-
-        SharedMemoryRead(ManageShmid,recvbuffer);
-        if(recvbuffer[0]=='a')
-        {
-            printf("Receive data from shared memory! : %s\n", recvbuffer);
-            
-            break;
-        }    
-    }
-    */
-        
-    
+    for(int i=0;i<=3;i++)
+     {
+          pthread_join(thread[i],0);
+     }
     return 0;
 }
 
 void* filesend(void* arg){ 
+
+    
     int threadShmid = 10 + (int)arg;//10을 서버에서 받아오게 수정
     char recvbuf[MEM_SIZE];
 	char sendbuf[MEM_SIZE];
-    printf("%d 스레드 시작 \n",threadShmid);
 
     sprintf(sendbuf,"abcdefghijklmnopqrstuvwzyz%d\n",threadShmid);
     int tid = SharedMemoryInit(threadShmid);
     SharedMemoryWrite(tid,sendbuf,sizeof(sendbuf));
-    printf("%d 전송",threadShmid);
+    printf("%d 전송\n",threadShmid);
 
-    pthread_exit(0);
+ //   sleep(2);    
 }
 
+static int SharedMemoryManageInit(int kNum)
+{
+    int shmid; 
+    while(1){ 
+        if((shmid = shmget((key_t)kNum, 0, 0))==-1)
+        {
+            //perror("write Shmat failed");
+        }else{
+            return shmid;
+        }
+    }
+    return 0;
+}
 
 
 static int SharedMemoryInit(int kNum)
 {
     int shmid;
-    void *shmaddr;
-    printf("연결 시도");
-    shmid = shmget((key_t)kNum, 0, 0);
-    if(shmid ==-1){
-        printf("init 대기중");
-        return 0;
-    }
-    
+    if((shmid = shmget((key_t)kNum, MEM_SIZE, IPC_CREAT| IPC_EXCL | 0666)) == -1) {
+        //새로 만드는 경우
+        //서버 측에서 이미 공유메모리 생성
+        while(1){ 
+            if((shmid = shmget((key_t)kNum, 0, 0))==-1)
+            {
+                //perror("write Shmat failed");
+            }else{
+                //printf("서버측 생성 연결 성공%d\n",kNum);
+                return shmid;
+            }
+        }
+    }//클에서 만듦
+    //printf("클 생성해서 연결 성공%d\n",kNum);  
     return shmid;
 }
 
@@ -106,21 +111,21 @@ static int SharedMemoryInit(int kNum)
 static int SharedMemoryWrite(int shmid, char *sMemory, int size)
 {
     void *shmaddr;
-    printf("before write :%s\n",sMemory);
-    if((shmaddr = shmat(shmid, (void *)0, 0)) == (void *)-1)
-    {
-        perror("write Shmat failed");
-    }
-    
-    //sprintf
-    //memcpy((char *)shmaddr, sMemory, size);
-    strncpy(shmaddr, sMemory,size);
-    printf("after write :%s\n",(char*)shmaddr);
-
-    //printf("after write :%s\n",shmaddr);
-    if(shmdt(shmaddr) == -1)
-    {
-        perror("close write Shmdt failed");
+    //printf("before write :%s",sMemory);
+    //서버에서 생성 안해서 오류날 경우 계속 반복
+    while(1){ 
+        //연결 될때까지 무한루프
+        if((shmaddr = shmat(shmid, (void *)0, 0)) == (void *)-1){}
+        else{
+            
+            sprintf((char*)shmaddr,sMemory);
+            //printf("after write :%s",(char*)shmaddr);
+            if(shmdt(shmaddr) == -1)
+            {
+                perror("close write Shmdt failed");
+            }
+            return 0;
+        }
     }
     return 0;
 }
@@ -129,18 +134,30 @@ static int SharedMemoryWrite(int shmid, char *sMemory, int size)
 static int SharedMemoryRead(int shmid,char *sMemory)
 {
     void *shmaddr;
-    shmctl(shmid, SHM_LOCK, 0);
-    if((shmaddr = shmat(shmid, (void *)0, 0)) == (void *)-1)
-    {
-        perror("read Shmat failed");
+    while(1){ 
+        //연결 될때까지 무한루프
+        if((shmaddr = shmat(shmid, (void *)0, 0)) == (void *)-1){}
+        else{
+            sprintf(sMemory,shmaddr);
+            //printf("after write :%s",(char*)shmaddr);
+            if(shmdt(shmaddr) == -1)
+            {
+                perror("close write Shmdt failed");
+            }
+            return 0;
+        }
     }
-    sprintf(sMemory,shmaddr);
-    if(shmdt(shmaddr) == -1)
-    {
-        perror("close read Shmdt failed");
-    }
-    shmctl(shmid, SHM_LOCK, 0);
     return 0;
 }
 
 
+static int SharedMemoryFree(int shmid)
+{
+    if(shmctl(shmid, IPC_RMID, 0) == -1) 
+    {
+        //perror("Shmctl failed");
+        return 1;
+    }
+    //printf("Shared memory end\n");
+    return 0;
+}
