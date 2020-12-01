@@ -64,10 +64,38 @@ void* filesend(void* arg){
     char recvbuf[MEM_SIZE];
 	char sendbuf[MEM_SIZE];
 
-    sprintf(sendbuf,"abcdefghijklmnopqrstuvwzyz%d\n",threadShmid);
+    sprintf(sendbuf,"abcdefghijklmnopqrstuvwzyz%d",threadShmid);
     int tid = SharedMemoryInit(threadShmid);
     SharedMemoryWrite(tid,sendbuf,sizeof(sendbuf));
     printf("%d 전송\n",threadShmid);
+
+    //변형된 파일 받을 예정
+    //변형된 파일이 안받아지는 이유
+    /*
+    1. 공유메모리가 작성하고 버퍼를 뽑아가는 느낌이 아니라
+    말그대로 공유하기 때문에 위에서 write한 정보가 그대로 써있고,
+    서버에서 수정되지 않은 상태에서 받으니까 그냥 원래있던게 그대로 출력되는걸로 보임
+    해결방법
+    1. 맨 앞에 수정했다는 커맨드를 확인할 수 있도록 recvbuf[0] 자리에 어떠한 신호를 준다.
+        프로그램은 단순하지만 확인하려면 계속 while문을 돌려야하므로 부하가 클수있음
+        다른 기법이랑 통일감이 있는 편
+    2. 시그널 이용해서 write가 실행되었을 때 반대쪽에서 read할 수 있도록 쏴주기 만들어보기 
+        시그널 찾아봐야하지만 적용하면 훨씬 구조적으로 완벽함
+        다른 기법이랑 통일감 없음
+        2-1. while무한루프 붙는 부분
+            read할 때 상대방이 작성 했나 안했나 무한정 대기 이거 하나
+    */
+    sleep(2);
+    while(1)
+    {
+        SharedMemoryRead(tid,recvbuf);
+        if(recvbuf[0]==0){
+            
+        }else{
+            printf("success recv %d: %s\n",threadShmid, recvbuf);
+            break;
+        }
+    }
 
  //   sleep(2);    
 }
@@ -75,13 +103,11 @@ void* filesend(void* arg){
 static int SharedMemoryManageInit(int kNum)
 {
     int shmid; 
-    while(1){ 
-        if((shmid = shmget((key_t)kNum, 0, 0))==-1)
-        {
-            //perror("write Shmat failed");
-        }else{
-            return shmid;
-        }
+    if((shmid = shmget((key_t)kNum, 0, 0))==-1)
+    {
+        //perror("write Shmat failed");
+    }else{
+        return shmid;
     }
     return 0;
 }
@@ -93,14 +119,10 @@ static int SharedMemoryInit(int kNum)
     if((shmid = shmget((key_t)kNum, MEM_SIZE, IPC_CREAT| IPC_EXCL | 0666)) == -1) {
         //새로 만드는 경우
         //서버 측에서 이미 공유메모리 생성
-        while(1){ 
-            if((shmid = shmget((key_t)kNum, 0, 0))==-1)
-            {
-                //perror("write Shmat failed");
-            }else{
-                //printf("서버측 생성 연결 성공%d\n",kNum);
-                return shmid;
-            }
+        if((shmid = shmget((key_t)kNum, 0, 0))==-1)
+        {
+            //perror("write Shmat failed");
+            return shmid;
         }
     }//클에서 만듦
     //printf("클 생성해서 연결 성공%d\n",kNum);  
@@ -112,9 +134,6 @@ static int SharedMemoryWrite(int shmid, char *sMemory, int size)
 {
     void *shmaddr;
     //printf("before write :%s",sMemory);
-    //서버에서 생성 안해서 오류날 경우 계속 반복
-    while(1){ 
-        //연결 될때까지 무한루프
         if((shmaddr = shmat(shmid, (void *)0, 0)) == (void *)-1){}
         else{
             
@@ -126,7 +145,6 @@ static int SharedMemoryWrite(int shmid, char *sMemory, int size)
             }
             return 0;
         }
-    }
     return 0;
 }
 
@@ -134,19 +152,17 @@ static int SharedMemoryWrite(int shmid, char *sMemory, int size)
 static int SharedMemoryRead(int shmid,char *sMemory)
 {
     void *shmaddr;
-    while(1){ 
-        //연결 될때까지 무한루프
-        if((shmaddr = shmat(shmid, (void *)0, 0)) == (void *)-1){}
+    if((shmaddr = shmat(shmid, (void *)0, 0)) == (void *)-1){}
         else{
+            printf("받은버퍼 :%s\n",(char*)shmaddr);
             sprintf(sMemory,shmaddr);
-            //printf("after write :%s",(char*)shmaddr);
+            printf("받은 문자열 :%s\n",sMemory);
             if(shmdt(shmaddr) == -1)
             {
                 perror("close write Shmdt failed");
             }
             return 0;
         }
-    }
     return 0;
 }
 

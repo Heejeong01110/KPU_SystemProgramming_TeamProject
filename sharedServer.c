@@ -63,17 +63,17 @@ int main(void){
 		        pthread_create(&thread[i], NULL, (void*)filerecv, (void *)argument);
                 
 	        }
-            SharedMemoryWrite(ManageShmid,"",sizeof(""));
-            break;
+            //SharedMemoryWrite(ManageShmid,"\0",sizeof("\0"));
         }
     }
     
     //sleep(4);
-    SharedMemoryFree(ManageShmid);
+    
     for(int i=0;i<=3;i++)
      {
           pthread_join(thread[i],0);
      }
+     SharedMemoryFree(ManageShmid);
 
     return 0;
 }
@@ -102,14 +102,19 @@ void* filerecv(void * arg){
         if(recvbuf[0]==0){
             
         }else{
-            printf("success %d: %s",threadShmid, recvbuf);
+            printf("받은거  %d: %s\n",threadShmid, recvbuf);
             break;
         }
     }
 
-    //printf("thread %d read while end\n",threadShmid);
+    //변형파일 전송할예정
+    
+    sprintf(sendbuf,"%s 에다가 변형된 문장입니다.",recvbuf);
+    printf("보낼거 : %s\n",sendbuf);
+    SharedMemoryWrite(tid,sendbuf,sizeof(sendbuf));
+    
 
-    SharedMemoryFree(tid);
+//    SharedMemoryFree(tid);
 
 }
 
@@ -152,14 +157,12 @@ static int SharedMemoryCreate(int kNum) //성공시 shmid 리턴
         //IPC_CREATE - key에 해당하는 메모리가 없으면 공유메모리를 생성한다.
         //IPC_EXCL - 공유메모리가 있으면 실패로 반환 
         //클라이언트 측에서 이미 생성
-        while(1){ 
-            if((shmid = shmget((key_t)kNum, 0, 0))==-1)
-            {
-                //perror("write Shmat failed");
-            }else{
-                //printf("클측 생성 연결 성공%d\n",kNum);
-                return shmid;
-            }
+        if((shmid = shmget((key_t)kNum, 0, 0))==-1)
+        {
+            //perror("write Shmat failed");
+        }else{
+            //printf("클측 생성 연결 성공%d\n",kNum);
+            return shmid;
         }
     }
     //서버측에서 정상적으로 만든경우
@@ -170,18 +173,16 @@ static int SharedMemoryCreate(int kNum) //성공시 shmid 리턴
 static int SharedMemoryWrite(int shmid, char *sMemory, int size)
 {
     void *shmaddr;
-    while(1){ 
-        if((shmaddr = shmat(shmid, (void *)0, 0)) == (void *)-1)
+    if((shmaddr = shmat(shmid, (void *)0, 0)) == (void *)-1){
+        //연결 될때까지 무한루프
+    }else{
+        sprintf((char*)shmaddr,sMemory);
+        printf("보내진거 :%s\n",shmaddr);
+        if(shmdt(shmaddr) == -1)
         {
-            //연결 될때까지 무한루프
-        }else{
-            sprintf((char*)shmaddr,sMemory);
-            if(shmdt(shmaddr) == -1)
-            {
-                printf("error3");
-            }
-            return 0;
+            printf("error3");
         }
+        return 0;
     }
     return 0;
 }
@@ -190,17 +191,14 @@ static int SharedMemoryWrite(int shmid, char *sMemory, int size)
 static int SharedMemoryRead(int shmid,char *sMemory)
 {
     void *shmaddr;
-    while(1){ 
-        //연결 될때까지 무한루프
-        if((shmaddr = shmat(shmid, (void *)0, 0)) == (void *)-1){}
-        else{
-            sprintf(sMemory,shmaddr);
-            if(shmdt(shmaddr) == -1)
-            {
-                printf("error4");
-            }
-            return 0;
+    if((shmaddr = shmat(shmid, (void *)0, 0)) == (void *)-1){}
+    else{
+        sprintf(sMemory,shmaddr);
+        if(shmdt(shmaddr) == -1)
+        {
+            printf("error4");
         }
+        return 0;
     }
     return 0;
 }
