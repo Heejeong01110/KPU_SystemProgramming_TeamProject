@@ -173,23 +173,24 @@ void* filesend(void* arg){
         }
 	totalfilereadlen += readlen;
     }
-    if((readlen=read(linkFd,buf,(fileSize/THREADNUM)%BUF_SIZE))<0){
+
+    if((readlen=read(linkFd,buf,(fileSize/THREADNUM)%BUF_SIZE))<0){ 
         printf("fail to call read()\n");
         error_handler(linkFileName);
     }
+	
     if(write(fifo2Ser,buf,(fileSize/THREADNUM)%BUF_SIZE)<0){
         printf("fail to call read()\n");
         error_handler(linkFileName);
     }
+
 	totalfilereadlen+=readlen;
 	fifo_lock.l_type = F_UNLCK;
 	if(fcntl(fifo2Ser,F_SETLK,&fifo_lock)==-1){
 		printf("fail to call write()\n");
            	error_handler(linkFileName);
 	}
-	
-
-    	
+	    	
 	//8. client의 1번 쓰레드는 "{자신의 PID}FIFO12cli"의 내용을 읽고 출력한다.
 	//9. 8이 끝나면 client의 2번 쓰레드는 "{자신의 PID}FIFO22cli"의 내용을 읽고 출력한다.
 	//10. 9가 끝나면 client의 3번 쓰레드는 "{자신의 PID}FIFO32cli"의 내용을 읽고 출력한다.
@@ -197,19 +198,20 @@ void* filesend(void* arg){
 	pthread_mutex_lock(&printlock);
 	if(n==1)
 		printf("\n\nThread1 Print Start\n\n");
-	if((n==2)&&(endNum!=1)){
-		pthread_cond_wait(&printer2,&printlock);
+	if((n==2)){
+		if(endNum!=1)
+			pthread_cond_wait(&printer2,&printlock);
 		printf("\n\nThread2 Print Start\n\n");
 	}
-	else if((n==3)&&(endNum!=2)){
-		pthread_cond_wait(&printer3,&printlock);
+	else if((n==3)){
+		if((endNum!=2))
+			pthread_cond_wait(&printer3,&printlock);
 		printf("\n\nThread3 Print Start\n\n");
 	}
 	
 	int totallen=0;
 	while((readlen=read(fifo2Cli,buf,BUF_SIZE))>0){
-		printf("%s",buf);
-		totallen+=readlen;
+		totallen+=write(1,buf,readlen);
 		
 	}
 	fflush(stdout);
