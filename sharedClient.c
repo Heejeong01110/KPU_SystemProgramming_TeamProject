@@ -34,12 +34,12 @@ pthread_t thread[3];
 
 int main() {
 
-	 char sendbuffer[MEM_SIZE] = "hello\n";
+	char sendbuffer[MEM_SIZE] = "hello";
     char recvbuffer[MEM_SIZE];
     int ManageShmid;
-    
+    printf("init 전\n");
     ManageShmid= SharedMemoryManageInit(KEY_NUM);
-    
+    printf("write 전\n");
     SharedMemoryWrite(ManageShmid,sendbuffer,sizeof(sendbuffer));
     
 
@@ -58,44 +58,32 @@ int main() {
 }
 
 void* filesend(void* arg){ 
-
-    
+    int shmbufSize = 0;
+    printf("thread 진입\n");
     int threadShmid = 10 + (int)arg;//10을 서버에서 받아오게 수정
     char recvbuf[MEM_SIZE];
 	char sendbuf[MEM_SIZE];
 
     sprintf(sendbuf,"abcdefghijklmnopqrstuvwzyz%d",threadShmid);
     int tid = SharedMemoryInit(threadShmid);
+    printf("write 전\n");
     SharedMemoryWrite(tid,sendbuf,sizeof(sendbuf));
     printf("%d 전송\n",threadShmid);
 
     //변형된 파일 받을 예정
     //변형된 파일이 안받아지는 이유
     /*
-    1. 공유메모리가 작성하고 버퍼를 뽑아가는 느낌이 아니라
-    말그대로 공유하기 때문에 위에서 write한 정보가 그대로 써있고,
-    서버에서 수정되지 않은 상태에서 받으니까 그냥 원래있던게 그대로 출력되는걸로 보임
     해결방법
     1. 맨 앞에 수정했다는 커맨드를 확인할 수 있도록 recvbuf[0] 자리에 어떠한 신호를 준다.
-        프로그램은 단순하지만 확인하려면 계속 while문을 돌려야하므로 부하가 클수있음
-        다른 기법이랑 통일감이 있는 편
-    2. 시그널 이용해서 write가 실행되었을 때 반대쪽에서 read할 수 있도록 쏴주기 만들어보기 
-        시그널 찾아봐야하지만 적용하면 훨씬 구조적으로 완벽함
-        다른 기법이랑 통일감 없음
-        2-1. while무한루프 붙는 부분
-            read할 때 상대방이 작성 했나 안했나 무한정 대기 이거 하나
+    이게 더 간단한듯
     */
     sleep(2);
-    while(1)
+    printf("read 전\n");
+    while(!SharedMemoryRead(tid,recvbuf))
     {
-        SharedMemoryRead(tid,recvbuf);
-        if(recvbuf[0]==0){
-            
-        }else{
-            printf("success recv %d: %s\n",threadShmid, recvbuf);
-            break;
-        }
+        //다시 시도    
     }
+    printf("success recv %d: %s\n",threadShmid, recvbuf);
 
  //   sleep(2);    
 }
@@ -133,37 +121,67 @@ static int SharedMemoryInit(int kNum)
 static int SharedMemoryWrite(int shmid, char *sMemory, int size)
 {
     void *shmaddr;
-    //printf("before write :%s",sMemory);
-        if((shmaddr = shmat(shmid, (void *)0, 0)) == (void *)-1){}
-        else{
-            
-            sprintf((char*)shmaddr,sMemory);
-            //printf("after write :%s",(char*)shmaddr);
-            if(shmdt(shmaddr) == -1)
-            {
-                perror("close write Shmdt failed");
-            }
-            return 0;
-        }
-    return 0;
+    char sendtemp[MEM_SIZE];
+    char* sendM = sendtemp;
+    if((shmaddr = shmat(shmid, (void *)0, 0)) == (void *)-1){
+        //printf("error\n");
+        return 0;
+    }
+
+    sprintf(sendM,"%d%s",3,sMemory);
+    sprintf((char*)shmaddr,"%s",sendM);
+    printf("%s",(char*)shmaddr);
+
+    //printf("after write :%s",(char*)shmaddr);
+    if(shmdt(shmaddr) == -1)
+    {
+        perror("close write Shmdt failed");
+        return 0;
+    }
+    return 1;
+    
+    
 }
 
 
 static int SharedMemoryRead(int shmid,char *sMemory)
 {
     void *shmaddr;
-    if((shmaddr = shmat(shmid, (void *)0, 0)) == (void *)-1){}
-        else{
-            printf("받은버퍼 :%s\n",(char*)shmaddr);
-            sprintf(sMemory,shmaddr);
-            printf("받은 문자열 :%s\n",sMemory);
-            if(shmdt(shmaddr) == -1)
-            {
-                perror("close write Shmdt failed");
-            }
-            return 0;
-        }
-    return 0;
+    char recvtemp[MEM_SIZE];
+    char* recvM = recvtemp;
+    if((shmaddr = shmat(shmid, (void *)0, 0)) == (void *)-1){
+        //printf("error\n");
+        return 0;
+    }
+            /*
+            0 - 아무도안함
+            1- 서버 write
+            2- 서버 read
+            3- 클라이언트 write
+            4- 클라이언트 read
+            */
+/*
+strncpy(문자열저장변수, 잘라야할문자열 + 시작위치값, 자를사이즈);
+
+요렇게 하면 된다.
+포인트는 '+ 시작위치값'이다.
+*/
+    sprintf(recvM,"%s",(char*)shmaddr);
+    if(recvM[0]=='1'){
+        //sprintf(recvM,"%s",shmtemp);
+        strncpy(sMemory,recvM+1,sizeof(recvM)-1);
+    }else{
+        return 0;
+    }
+    //sprintf(sMemory,"%s",recvM);
+    printf("받은 문자열 :%s\n",sMemory);
+
+    if(shmdt(shmaddr) == -1)
+    {
+        perror("close write Shmdt failed");
+        return 0;
+    }
+    return 1;
 }
 
 
