@@ -49,11 +49,24 @@ pthread_cond_t printer3;
 pthread_mutex_t printlock;
 int endNum;
 /* 이 함수를 사용하면 에러처리를 위해 프로그램을 exit() 시키기 전에 FIFO파일이나 link파일을 삭제시켜줄 수 있다.*/
-void error_handler(char * FileName){
-    	if(FileName!=null)
-        	unlink(FileName);
+void error_handler(void){
+	char fileName[FILENAMESIZE];
+	for(int n=1;n<=3;n++){
+		sprintf(fileName,"./%ldFIFO%d2ser",getpid(),n);
+		unlink(fileName);
+		sprintf(fileName,"./%ldFIFO%d2cli",getpid(),n);
+		unlink(fileName);
+		sprintf(fileName,"./%ldFIFO%dtemp.txt",getpid(),n);
+		unlink(fileName);
+		sprintf(fileName,"./codelink%d_%d",getpid(),n);
+		unlink(fileName);
+	}
+	exit(0);
+}
 
-	pthread_exit(0);
+void signalhandler(int sig) {
+	error_handler();
+	exit(0);
 }
 
 //client
@@ -72,7 +85,7 @@ int main()
     while((protocol = open("./managefifo", O_APPEND | O_WRONLY)) < 0){
         //{T} 시간을 넘었는지 확인하고 넘었다면 프로세스 종료 
     }
-    
+    signal(SIGINT, signalhandler);
     /*2. managefifo 파일에 "request {mypid} {파일 크기}"를 write */
     /*code.txt의 상태 읽기*/
     if (stat("./code.txt", &sb) == -1){ 
@@ -143,52 +156,52 @@ void* filesend(void* arg){
     sprintf(linkFileName,"codelink%ld_%d",mypid,n);
     if(link("code.txt",linkFileName)<0){
         printf("fail to call link(code.txt,%s)\n",linkFileName);
-        error_handler(linkFileName);
+        error_handler();
     }
     if((linkFd=open(linkFileName,O_RDONLY))<0){
         printf("fail to call open(%s)\n",linkFileName);
-        error_handler(linkFileName);
+        error_handler();
     }
     rwpointer = (fileSize/THREADNUM)*(n-1);
     if(lseek(linkFd,rwpointer,SEEK_SET)<0){
         printf("fail to call lseek(%s)\n",linkFileName);
-        error_handler(linkFileName);
+        error_handler();
     }
 
 
 	if (fcntl(fifo2Ser,F_SETLKW,&fifo_lock)==-1){
 		printf("fail to call fcntl()\n");
-		error_handler(linkFileName);
+		error_handler();
 	}
 	int totalfilereadlen = 0;
     for(int i = 0 ;i < (fileSize/THREADNUM)/BUF_SIZE;i++){
         
         if((readlen=read(linkFd,buf,BUF_SIZE))<0){
             printf("fail to call read()\n");
-            error_handler(linkFileName);
+            error_handler();
         }
 	if(write(fifo2Ser,buf,BUF_SIZE)<0){
             printf("fail to call write()\n");
-            error_handler(linkFileName);
+            error_handler();
         }
 	totalfilereadlen += readlen;
     }
 
     if((readlen=read(linkFd,buf,(fileSize/THREADNUM)%BUF_SIZE))<0){ 
         printf("fail to call read()\n");
-        error_handler(linkFileName);
+        error_handler();
     }
 	
     if(write(fifo2Ser,buf,(fileSize/THREADNUM)%BUF_SIZE)<0){
         printf("fail to call read()\n");
-        error_handler(linkFileName);
+        error_handler();
     }
 
 	totalfilereadlen+=readlen;
 	fifo_lock.l_type = F_UNLCK;
 	if(fcntl(fifo2Ser,F_SETLK,&fifo_lock)==-1){
 		printf("fail to call write()\n");
-           	error_handler(linkFileName);
+           	error_handler();
 	}
 	    	
 	//8. client의 1번 쓰레드는 "{자신의 PID}FIFO12cli"의 내용을 읽고 출력한다.
