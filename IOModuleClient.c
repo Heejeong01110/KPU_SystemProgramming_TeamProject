@@ -1,22 +1,3 @@
-/*
-	작성자: 김은란
-	주석 규칙:
-		1. /* 로 시작하는 주석은 아래혹은 왼쪽에 있는 코드 설명 주석이다
-		2. /* 이후 번호가 있으면 (ex /*3. 내용) 아래 통신 규칙에 해당하는 번호이다.
-		3. //로 시작하는 주석은 다음 내용에 해당하는 코드 추가가 필요하다는 의미의 주석이다.
-		4. 주석안에 {val}은 변수 val을 의미한다.
-	통신 규칙:
-	1. server가 managefifo file을 생성한다.
-	2. client는 managefifo file이 있으면 open 후 "request {자신의 PID} {파일 크기}"를 write하고, 없으면 T시간 동안 스핀하며 대기한다.(T시간이 지나면 프로세스를 종료한다.)
-	3. server는 managefifo에 있는 요청 메시지("request {자신의 PID} {파일 크기}")를 확인하면 응답을 위해 3개의 쓰레드를 할당하고, 각 쓰레드는 3개의 "{요청자 PID}FIFO{n}2ser"와 "{요청자 PID}FIFO{n}2cli" FIFO 파일을 생성한다.
-	4. client는 3개의 쓰레드를 할당하고 각 쓰레드는 순서에 따라 "{자신의 PID}FIFO1{n}2ser"와 "{자신의 PID}FIFO{n}2cli"를 open한다
-	5. client의 각 쓰레드는 "code.txt"파일을 3분할하여 병행적으로 읽은 후 "{자신의 PID}FIFO{n}2ser" 파일에 writelock를 건 후 write한다.
-	6. server의 각 쓰레드는 "{요청자 PID}FIFO{n}2ser" 파일을 읽고 복호화하여 "{요청자 PID}FIFO{n}temp.txt"파일에 임시 저장한다.
-	7. server의 각 쓰레드는 "{요청자 PID}FIFO{n}temp.txt" 읽고 "{요청자 PID}FIFO{n}2cli" 파일에 writelock를 건 후 write한다.
-	8. client의 1번 쓰레드는 "{자신의 PID}FIFO12cli"의 내용을 읽고 출력한다.
-	9. 8이 끝나면 client의 2번 쓰레드는 "{자신의 PID}FIFO22cli"의 내용을 읽고 출력한다.
-	10. 9가 끝나면 client의 3번 쓰레드는 "{자신의 PID}FIFO32cli"의 내용을 읽고 출력한다.
-*/
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -30,7 +11,7 @@
 #include <sys/types.h>
 #include <signal.h>
 #include <semaphore.h>
-
+#include <errno.h>
 #define THREADNUM 3
 #define BUF_SIZE 4096
 #define T 5
@@ -52,14 +33,15 @@ int endNum;
 void error_handler(void) {
 	char fileName[FILENAMESIZE];
 	for (int n = 1; n <= 3; n++) {
-		sprintf(fileName, "./%ldFIFO%d2ser", getpid(), n);
-		unlink(fileName);
-		sprintf(fileName, "./%ldFIFO%d2cli", getpid(), n);
-		unlink(fileName);
-		sprintf(fileName, "./%ldFIFO%dtemp.txt", getpid(), n);
-		unlink(fileName);
-		sprintf(fileName, "./codelink%d_%d", getpid(), n);
-		unlink(fileName);
+		sprintf(fileName, "./channel/%ldFIFO%d2ser", getpid(), n);
+		remove(fileName);
+		sprintf(fileName, "./channel/%ldFIFO%d2cli", getpid(), n);
+		remove(fileName);
+		sprintf(fileName, "./channel/%ldFIFO%d2temp.txt", getpid(), n);
+		remove(fileName);
+		sprintf(fileName, "./channel/codelink%d_%d", getpid(), n);
+		remove(fileName);
+		
 	}
 	exit(0);
 }
@@ -90,12 +72,13 @@ int main()
 	//{T} 시간 측정 시작
 	while ((protocol = open("./managefifo", O_APPEND | O_WRONLY)) < 0) {
 		//{T} 시간을 넘었는지 확인하고 넘었다면 프로세스 종료 
+		printf("errno:%d",errno);
 	}
 	signal(SIGINT, signalhandler);
 	/*2. managefifo 파일에 "request {mypid} {파일 크기}"를 write */
 	/*code.txt의 상태 읽기*/
 	if (stat("./code.txt", &sb) == -1) {
-		printf("fail to call stat(./code,txt)\n");
+		printf("fail to call stat(./code.txt)\n");
 		exit(1);
 	}
 	fileSize = (long long)sb.st_size;
@@ -127,8 +110,8 @@ int main()
 		//실패 시 에러처리 추가
 		pthread_join(thread[i], NULL);
 	}
-
-	pthread_exit(1);
+	error_handler();
+	return 0;
 }
 
 void* filesend(void* arg) {
@@ -152,8 +135,8 @@ void* filesend(void* arg) {
 
 	long long rwpointer; /* read write pointer */
 	/*4. "{자신의 PID}FIFO1{n}2ser"와 "{자신 PID}FIFO{n}2cli"를 open한다*/
-	sprintf(fifo2SerFileName, "./%ldFIFO%d2ser", mypid, n);
-	sprintf(fifo2CliFileName, "./%ldFIFO%d2cli", mypid, n);
+	sprintf(fifo2SerFileName, "./channel/%ldFIFO%d2ser", mypid, n);
+	sprintf(fifo2CliFileName, "./channel/%ldFIFO%d2cli", mypid, n);
 	//{T} 시간 측정 시작
 	while ((fifo2Ser = open(fifo2SerFileName, O_WRONLY)) < 0) {
 		//{T} 시간을 넘었는지 확인하고 넘었다면 프로세스 종료 
@@ -168,7 +151,7 @@ void* filesend(void* arg) {
 	2. 링크파일을 open한다.
 	3. lseek()를 통해 적절한 위치로 read write pointer 이동시킨다.
 	*/
-	sprintf(linkFileName, "codelink%ld_%d", mypid, n);
+	sprintf(linkFileName, "./channel/codelink%ld_%d", mypid, n);
 	if (link("code.txt", linkFileName) < 0) {
 		printf("fail to call link(code.txt,%s)\n", linkFileName);
 		error_handler();
