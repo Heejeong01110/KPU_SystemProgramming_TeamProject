@@ -8,11 +8,11 @@ int main(void)
 {
 	char buf[BUFSIZE];
 	int orifd;
-	int codefd = open("code.txt",O_WRONLY|O_TRUNC);
+	int codefd = open("codeqq.txt",O_WRONLY|O_TRUNC);
 	int readlen;
 
-	orifd = open("original.txt",O_RDONLY);
-	codefd = open("code.txt",O_WRONLY|O_TRUNC);
+	orifd = open("origtext.txt",O_RDONLY);
+	codefd = open("codeqq.txt",O_WRONLY|O_TRUNC);
 
 	while((readlen=read(orifd,buf,BUFSIZE))>0){
 		for(int i = 0 ; i < readlen;i++)
