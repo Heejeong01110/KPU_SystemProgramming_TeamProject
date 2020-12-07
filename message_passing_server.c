@@ -17,11 +17,11 @@
 #define FILENAMESIZE 255
 #define null NULL
 #define THREADPERWORK 3
-key_t key_id, key_id2;  // , key_id3
+
 int clientCnt = 0;
 void* filerecv(void* arg);
 pthread_t thread[3];
-
+//sem_t printer;
 
 /*typedef struct tTHREAD
 {
@@ -62,6 +62,10 @@ void requestPasing(char* request[3], char buf[])
 		}
 	}
 }
+void signalhandler(int sig) {
+//	error_handler("./managefifo",null,null,null);
+	exit(0);
+}
 //THREAD recvbuf[3];
 //THREAD sendbuf[3];
 //int sender_id;
@@ -101,17 +105,40 @@ int main()
 	char buf[BUF_SIZE];
 	//char buf2[BUF_SIZE];
 	int protocol;
+	int readlen;
 	char* request[3];
 	//int readlen=0;
 	struct threadArg* argument;
-
-	key_id = msgget((key_t)60041, IPC_CREAT | 0666); //send queue
-	key_id2 = msgget((key_t)60042, IPC_CREAT | 0666); //recv queue
+	unlink("./managefifo");
+	if(mkfifo("./managefifo",0666) == -1){ //fifo init
+        printf("fail to make fifo manage()\n");
+		unlink("./managefifo");
+        //error_handler("./managefifo",null,null,null);
+    }
+	signal(SIGINT, signalhandler);
+	//sem_init(&printer, 0, 0);	
+	/*key_id = msgget((key_t)60041, IPC_CREAT | 0666); //send queue
+	key_id2 = msgget((key_t)60042, IPC_CREAT | 0666); //recv queue*/
 	//key_id3= msgget((key_t)60043, IPC_CREAT|0666); //result queue
 
 	printf("시작 전\n");
 
-	requestPasing(request, buf);
+	while(1){
+        /*3. server는 managefifo에 있는 요청 메시지("request {자신의 PID} {파일 크기}")를 확인하면 응답을 위해 3개의 쓰레드를 할당하고*/
+    	if((protocol = open("./managefifo", O_RDONLY)) < 0){ //waiting in client
+        	printf("fail to call open manage()\n");
+			unlink("./managefifo");
+			exit(0);
+        	//error_handler("./managefifo",null,null,null);
+    	}
+        if((readlen=read(protocol, buf, BUF_SIZE)) < 0 ){ 
+		printf("fail to call read()");
+		//error_handler("./managefifo",null,null,null);
+        }
+	if(readlen<7) /*읽은 값이 "request"의 길이인 7보다 작으면 while문 재시작*/
+		continue;
+	requestPasing(request,buf);
+
 	// requestPasing(request,buf2);
 	for (int i = 0; i < THREADPERWORK; i++) {
 		argument = (struct threadArg*)malloc(sizeof(struct threadArg));
@@ -121,9 +148,10 @@ int main()
 		pthread_create(&thread[i], NULL, (void*)filerecv, (void*)argument/*, (void*)& recvbuf[i]*/);
 	}
 	memset(buf, 0x00, BUF_SIZE);
+	close(protocol);
 	// memset(buf2,0x00,BUF_SIZE);
 
-	pthread_exit(0);
+	
 	/*for (int i = 0; i <= THREADPERWORK; i++)
 	{
 		pthread_join(thread[i], NULL);
@@ -132,12 +160,14 @@ int main()
 
 	//unlink("./managefifo");
 
-	if (msgctl(key_id2, IPC_RMID, NULL) == -1) {
+	/*if (msgctl(key_id2, IPC_RMID, NULL) == -1) {
 		printf("msgctl failed\n");
 		exit(1);
+	}*/
+	
 	}
-
-	return 0;
+	unlink("./managefifo");
+	pthread_exit(0);
 }
 
 void* filerecv(void* arg) {
@@ -153,8 +183,12 @@ void* filerecv(void* arg) {
 	char fifo2CliFileName[FILENAMESIZE];
 	int tempfd;
 	int readlen = 0;
+	key_t sendkey, recvkey;
 	/*매개변수 저장*/
 	struct threadArg* argument = (struct threadArg*)arg;
+
+	recvkey = msgget((key_t)60040 + (key_t)argument->number, IPC_CREAT | 0666); //recv queue
+	sendkey = msgget((key_t)60040 + (key_t)(argument->number + THREADPERWORK), IPC_CREAT | 0666); //recv queue
 	sprintf(fifo2SerFileName, "%s2ser", argument->fifoFileName);
 	sprintf(fifo2CliFileName, "%s2cli", argument->fifoFileName);
 	sprintf(tempFileName, "./%stemp.txt", argument->fifoFileName);
@@ -177,7 +211,7 @@ void* filerecv(void* arg) {
 	//error_handler("./managefifo",fifo2SerFileName,fifo2CliFileName,tempFileName);
 	}
 
-	if (msgrcv(key_id2, (void*)& buf, BUF_SIZE, 0, 0) == -1) {
+	if (msgrcv(recvkey, (void*)& buf, BUF_SIZE, 0, 0) == -1) {
 		perror("msgrcv error");
 		exit(1);
 	}
@@ -197,11 +231,11 @@ void* filerecv(void* arg) {
 	//strcpy(buf2, buf);
 	lseek(tempfd, 0, SEEK_SET);
 	while ((readlen = read(tempfd, buf, BUF_SIZE)) > 0) {
-		if (msgsnd(key_id, (void*)& buf, BUF_SIZE, 0) == -1) {
+		if (msgsnd(sendkey, (void*)& buf, BUF_SIZE, 0) == -1) {
 			perror("msgsnd error");
 			exit(1);
 		}
-		printf("\nthread%d send success\n", argument->number);
+		printf("\nthread%d send %d success\n",argument->number, sendkey );
 		printf("%s\n", buf);
 		//   }
 		   /*sendbuf[i].cCnt = recvbuf[i].cCnt;
@@ -217,5 +251,4 @@ void* filerecv(void* arg) {
 		   */
 		   //}
 	}
-
 }

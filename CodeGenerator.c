@@ -7,31 +7,22 @@
 int main(void)
 {
 	char buf[BUFSIZE];
-	
-	int fd = open("code.txt",O_WRONLY);
-	for(int i = 0 ; i < BUFSIZE-1;i++)
-	{
-		buf[i] = 'a';
-		//buf[i] *= 2;
-	}
-	buf[BUFSIZE-1] = '\n';
-	write(fd,buf,BUFSIZE);
-	for(int i = 0 ; i < BUFSIZE-1;i++)
-	{
-		buf[i] = 'b';
-		//buf[i] *= 2;
-	}
-	buf[BUFSIZE-1] = '\n';
-	write(fd,buf,BUFSIZE);
+	int orifd;
+	int codefd = open("codeqq.txt",O_WRONLY|O_TRUNC);
+	int readlen;
 
-	for(int i = 0 ; i < BUFSIZE-1;i++)
-	{
-		buf[i] = 'c';
-		//buf[i] *= 2;
-	}
-	buf[BUFSIZE-1] = '\n';
-	write(fd,buf,BUFSIZE);
+	orifd = open("origtext.txt",O_RDONLY);
+	codefd = open("codeqq.txt",O_WRONLY|O_TRUNC);
 
-	close(fd);
+	while((readlen=read(orifd,buf,BUFSIZE))>0){
+		for(int i = 0 ; i < readlen;i++)
+		{
+			buf[i] += 1;
+		}
+		write(codefd,buf,readlen);
+	}
+
+	close(orifd);
+	close(codefd);
 
 }
