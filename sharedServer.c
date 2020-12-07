@@ -122,7 +122,6 @@ void* filerecv(void * arg){
 
     int i=0;
     
-    //sleep(1);
     while(1){
         if(SharedMemoryRead(ctostid,buf)){
             break;
