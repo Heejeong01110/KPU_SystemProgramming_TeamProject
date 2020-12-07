@@ -1,0 +1,2401 @@
+7장. File
+2
+목 차
+• Disk 구조
+• File system 구조
+• inode(index node)
+• Virtual File System
+• Kernel data structures for open files
+• UNIX file access primitives
+• Standard I/O Libraries
+• File System의 연결(mount)
+File 관련 issue
+• 파일 관련 issue
+– 사용자가 사용하는 이름과 disk 상의 데이터를 연결하는 객체
+– 파일 속성 제어
+– 파일 접근 제어
+– 파일 계층 구조 지원
+– 장치 파일 지원
+• Linux file access primitives – open, creat : 파일 열기 or 생성
+– close : 파일 닫기
+– read : 파일에서 정보 추출
+– write : 파일에 정보 기록
+– lseek : 파일 접근 위치 변경
+– unlink, remove : 파일 삭제
+– fcntl : 파일 속성 제어
+– …
+3
+Disk의 물리적 구성 요소
+ü Head, ARM
+ü Platter, Spindle
+ü Surface, Track, Sector, Cylinder
+4
+Disk의 물리적 구성 요소
+• 데이터 접근 방법
+– Sector addressing : surface(head), track(cylinder), sector – Heads move to appropriate track : 탐색 시간 (Seek time) – Wait for the sector to appear under the head : 회전 지연 시간
+(rotational latency) – Read/Write the sector: 데이터 전달 시간 (transmission time)
+– Seek time과 Rotational Latency를 줄이는 것이 중요
+è 다양한 디스크 스케줄링 방법 존재, parallel access 이용
+5
+Disk의 논리적 구조
+• 논리적 관점 (Linux 입장에서 디스크 구조) – 디스크는 디스크 블록들의 집합 (disk is a collection of disk
+blocks) – 디스크 블록의 크기는 보통 페이지 프레임의 크기와 같다 (4K,
+8K) – 블록 번호를 Sector Address로 변환하는 작업은 컨트롤러나
+디스크 드라이버에서 수행
+1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 ….
+0
+6
+Disk 블록 관리
+• 시나리오
+– 새로운 14 K 크기의 파일을 디스크에게 쓰려고 함
+– 디스크 블록의 크기는 4K로 가정 (따라서 4개의 디스크 블록이 필요) – 아래 그림에서 빗금이 있는 디스크 블록들은 이미 사용 중인 (파일의 데
+이터를 갖고 있는) 블록이라고 가정
+– 어떤 디스크 블록들을 할당할 것인가? (disk block allocation problem)
+• 디스크 블록 할당 방법
+– 연속 할당 방법 (sequential allocation) – 불연속 할당 방법 (non sequential allocation)
+0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 15 16 ..
+7
+Disk 블록 관리
+• 연속 할당 방법
+new file name
+start size 0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 .. 15 16
+8
+Disk 블록 관리
+• 불연속 할당 방법 : 블록 체인 (block chain) 방법
+– 현재 시나리오에서는 1, 5, 6, 9 블록을 할당
+– 할당된 블록을 링크로 연결
+new file name
+0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 .. 15 16
+9
+Disk 블록 관리
+• 불연속 할당 방법 : 인덱스 블록 (index block) 기법
+new file name
+index block
+…...
+0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 .. 15 16
+10
+File System 구조
+• 파일 시스템
+– 디스크의 각 파티션마다 존재
+– 4 부분으로 구성 : boot, super block, inode, data blocks – mkfs, newfs 등의 명령으로 생성
+system
+(PC)
+/dev/hda /dev/hdb
+/dev/hda1
+/dev/hda2
+/dev/hda3
+boot
+super block
+i-node
+disk blocks
+11
+File System 구조
+• 수퍼 블록 (super block) – 파일 시스템의 정보 관리하는 객체 (파일의 정보를 inode가 관리
+하는 것과 유사) – 파일 시스템 유형 : ext2/4, nfs, msdos, coda, proc, ntfs, …
+– Ext2/4의 경우
+• free inode와 free block들을 bitmap으로 관리
+• block group 정의 (ffs의 cylinder group와 유사한 개념)
+• 결함 허용 기능 제공
+– nfs (Network File System by Sun)의 경우
+• 각 파일 인터페이스를 서버에 대한 RPC로 변환
+• XDR 사용
+• 약한 일관성 (weak consistency) 보장
+12
+Structure of the Ext2 File System
+Block group 0 Block group 1 ... Block group n Boot
+block
+Super
+block
+Group
+descriptors
+Block
+bitmap
+Inode
+bitmap
+Inode
+blocks Data blocks
+partition 2 partition 3
+hard disk
+Ext2 file system
+block group
+partition 1
+13
+UNIX File System
+• File system layout – Bootstrap block(0)- kernel loading program
+– Super block(1) - file system information usually kept in memory
+• # of blocks for file system ( r)
+• # of blocks for inode blocks (n-1)
+• # of blocks for data blocks (r-n)
+• File system last update time
+• A list of free data block numbers
+• A list of free inode numbers – Inode blocks(2 ~ n)
+• A list of inode structures – Data blocks(n+1 ~ r)
+• A list of data blocks
+Bootstrap block
+Super block
+Inode blocks
+Data blocks
+0
+1
+2~n
+n+1~r
+14
+Caching: Buffer cache
+사용자 application
+디스크
+블록 1
+디스크
+블록 23
+디스크
+블록 24
+7장. File
+2
+목 차
+• Disk 구조
+• File system 구조
+• inode(index node)
+• Virtual File System
+• Kernel data structures for open files
+• UNIX file access primitives
+• Standard I/O Libraries
+• File System의 연결(mount)
+File 관련 issue
+• 파일 관련 issue
+– 사용자가 사용하는 이름과 disk 상의 데이터를 연결하는 객체
+– 파일 속성 제어
+– 파일 접근 제어
+– 파일 계층 구조 지원
+– 장치 파일 지원
+• Linux file access primitives – open, creat : 파일 열기 or 생성
+– close : 파일 닫기
+– read : 파일에서 정보 추출
+– write : 파일에 정보 기록
+– lseek : 파일 접근 위치 변경
+– unlink, remove : 파일 삭제
+– fcntl : 파일 속성 제어
+– …
+3
+Disk의 물리적 구성 요소
+ü Head, ARM
+ü Platter, Spindle
+ü Surface, Track, Sector, Cylinder
+4
+Disk의 물리적 구성 요소
+• 데이터 접근 방법
+– Sector addressing : surface(head), track(cylinder), sector – Heads move to appropriate track : 탐색 시간 (Seek time) – Wait for the sector to appear under the head : 회전 지연 시간
+(rotational latency) – Read/Write the sector: 데이터 전달 시간 (transmission time)
+– Seek time과 Rotational Latency를 줄이는 것이 중요
+è 다양한 디스크 스케줄링 방법 존재, parallel access 이용
+5
+Disk의 논리적 구조
+• 논리적 관점 (Linux 입장에서 디스크 구조) – 디스크는 디스크 블록들의 집합 (disk is a collection of disk
+blocks) – 디스크 블록의 크기는 보통 페이지 프레임의 크기와 같다 (4K,
+8K) – 블록 번호를 Sector Address로 변환하는 작업은 컨트롤러나
+디스크 드라이버에서 수행
+1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 ….
+0
+6
+Disk 블록 관리
+• 시나리오
+– 새로운 14 K 크기의 파일을 디스크에게 쓰려고 함
+– 디스크 블록의 크기는 4K로 가정 (따라서 4개의 디스크 블록이 필요) – 아래 그림에서 빗금이 있는 디스크 블록들은 이미 사용 중인 (파일의 데
+이터를 갖고 있는) 블록이라고 가정
+– 어떤 디스크 블록들을 할당할 것인가? (disk block allocation problem)
+• 디스크 블록 할당 방법
+– 연속 할당 방법 (sequential allocation) – 불연속 할당 방법 (non sequential allocation)
+0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 15 16 ..
+7
+Disk 블록 관리
+• 연속 할당 방법
+new file name
+start size 0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 .. 15 16
+8
+Disk 블록 관리
+• 불연속 할당 방법 : 블록 체인 (block chain) 방법
+– 현재 시나리오에서는 1, 5, 6, 9 블록을 할당
+– 할당된 블록을 링크로 연결
+new file name
+0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 .. 15 16
+9
+Disk 블록 관리
+• 불연속 할당 방법 : 인덱스 블록 (index block) 기법
+new file name
+index block
+…...
+0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 .. 15 16
+10
+File System 구조
+• 파일 시스템
+– 디스크의 각 파티션마다 존재
+– 4 부분으로 구성 : boot, super block, inode, data blocks – mkfs, newfs 등의 명령으로 생성
+system
+(PC)
+/dev/hda /dev/hdb
+/dev/hda1
+/dev/hda2
+/dev/hda3
+boot
+super block
+i-node
+disk blocks
+11
+File System 구조
+• 수퍼 블록 (super block) – 파일 시스템의 정보 관리하는 객체 (파일의 정보를 inode가 관리
+하는 것과 유사) – 파일 시스템 유형 : ext2/4, nfs, msdos, coda, proc, ntfs, …
+– Ext2/4의 경우
+• free inode와 free block들을 bitmap으로 관리
+• block group 정의 (ffs의 cylinder group와 유사한 개념)
+• 결함 허용 기능 제공
+– nfs (Network File System by Sun)의 경우
+• 각 파일 인터페이스를 서버에 대한 RPC로 변환
+• XDR 사용
+• 약한 일관성 (weak consistency) 보장
+12
+Structure of the Ext2 File System
+Block group 0 Block group 1 ... Block group n Boot
+block
+Super
+block
+Group
+descriptors
+Block
+bitmap
+Inode
+bitmap
+Inode
+blocks Data blocks
+partition 2 partition 3
+hard disk
+Ext2 file system
+block group
+partition 1
+13
+UNIX File System
+• File system layout – Bootstrap block(0)- kernel loading program
+– Super block(1) - file system information usually kept in memory
+• # of blocks for file system ( r)
+• # of blocks for inode blocks (n-1)
+• # of blocks for data blocks (r-n)
+• File system last update time
+• A list of free data block numbers
+• A list of free inode numbers – Inode blocks(2 ~ n)
+• A list of inode structures – Data blocks(n+1 ~ r)
+• A list of data blocks
+Bootstrap block
+Super block
+Inode blocks
+Data blocks
+0
+1
+2~n
+n+1~r
+14
+Caching: Buffer cache
+사용자 application
+디스크
+블록 1
+디스크
+블록 23
+디스크
+블록 24
+7장. File
+2
+목 차
+• Disk 구조
+• File system 구조
+• inode(index node)
+• Virtual File System
+• Kernel data structures for open files
+• UNIX file access primitives
+• Standard I/O Libraries
+• File System의 연결(mount)
+File 관련 issue
+• 파일 관련 issue
+– 사용자가 사용하는 이름과 disk 상의 데이터를 연결하는 객체
+– 파일 속성 제어
+– 파일 접근 제어
+– 파일 계층 구조 지원
+– 장치 파일 지원
+• Linux file access primitives – open, creat : 파일 열기 or 생성
+– close : 파일 닫기
+– read : 파일에서 정보 추출
+– write : 파일에 정보 기록
+– lseek : 파일 접근 위치 변경
+– unlink, remove : 파일 삭제
+– fcntl : 파일 속성 제어
+– …
+3
+Disk의 물리적 구성 요소
+ü Head, ARM
+ü Platter, Spindle
+ü Surface, Track, Sector, Cylinder
+4
+Disk의 물리적 구성 요소
+• 데이터 접근 방법
+– Sector addressing : surface(head), track(cylinder), sector – Heads move to appropriate track : 탐색 시간 (Seek time) – Wait for the sector to appear under the head : 회전 지연 시간
+(rotational latency) – Read/Write the sector: 데이터 전달 시간 (transmission time)
+– Seek time과 Rotational Latency를 줄이는 것이 중요
+è 다양한 디스크 스케줄링 방법 존재, parallel access 이용
+5
+Disk의 논리적 구조
+• 논리적 관점 (Linux 입장에서 디스크 구조) – 디스크는 디스크 블록들의 집합 (disk is a collection of disk
+blocks) – 디스크 블록의 크기는 보통 페이지 프레임의 크기와 같다 (4K,
+8K) – 블록 번호를 Sector Address로 변환하는 작업은 컨트롤러나
+디스크 드라이버에서 수행
+1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 ….
+0
+6
+Disk 블록 관리
+• 시나리오
+– 새로운 14 K 크기의 파일을 디스크에게 쓰려고 함
+– 디스크 블록의 크기는 4K로 가정 (따라서 4개의 디스크 블록이 필요) – 아래 그림에서 빗금이 있는 디스크 블록들은 이미 사용 중인 (파일의 데
+이터를 갖고 있는) 블록이라고 가정
+– 어떤 디스크 블록들을 할당할 것인가? (disk block allocation problem)
+• 디스크 블록 할당 방법
+– 연속 할당 방법 (sequential allocation) – 불연속 할당 방법 (non sequential allocation)
+0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 15 16 ..
+7
+Disk 블록 관리
+• 연속 할당 방법
+new file name
+start size 0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 .. 15 16
+8
+Disk 블록 관리
+• 불연속 할당 방법 : 블록 체인 (block chain) 방법
+– 현재 시나리오에서는 1, 5, 6, 9 블록을 할당
+– 할당된 블록을 링크로 연결
+new file name
+0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 .. 15 16
+9
+Disk 블록 관리
+• 불연속 할당 방법 : 인덱스 블록 (index block) 기법
+new file name
+index block
+…...
+0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 .. 15 16
+10
+File System 구조
+• 파일 시스템
+– 디스크의 각 파티션마다 존재
+– 4 부분으로 구성 : boot, super block, inode, data blocks – mkfs, newfs 등의 명령으로 생성
+system
+(PC)
+/dev/hda /dev/hdb
+/dev/hda1
+/dev/hda2
+/dev/hda3
+boot
+super block
+i-node
+disk blocks
+11
+File System 구조
+• 수퍼 블록 (super block) – 파일 시스템의 정보 관리하는 객체 (파일의 정보를 inode가 관리
+하는 것과 유사) – 파일 시스템 유형 : ext2/4, nfs, msdos, coda, proc, ntfs, …
+– Ext2/4의 경우
+• free inode와 free block들을 bitmap으로 관리
+• block group 정의 (ffs의 cylinder group와 유사한 개념)
+• 결함 허용 기능 제공
+– nfs (Network File System by Sun)의 경우
+• 각 파일 인터페이스를 서버에 대한 RPC로 변환
+• XDR 사용
+• 약한 일관성 (weak consistency) 보장
+12
+Structure of the Ext2 File System
+Block group 0 Block group 1 ... Block group n Boot
+block
+Super
+block
+Group
+descriptors
+Block
+bitmap
+Inode
+bitmap
+Inode
+blocks Data blocks
+partition 2 partition 3
+hard disk
+Ext2 file system
+block group
+partition 1
+13
+UNIX File System
+• File system layout – Bootstrap block(0)- kernel loading program
+– Super block(1) - file system information usually kept in memory
+• # of blocks for file system ( r)
+• # of blocks for inode blocks (n-1)
+• # of blocks for data blocks (r-n)
+• File system last update time
+• A list of free data block numbers
+• A list of free inode numbers – Inode blocks(2 ~ n)
+• A list of inode structures – Data blocks(n+1 ~ r)
+• A list of data blocks
+Bootstrap block
+Super block
+Inode blocks
+Data blocks
+0
+1
+2~n
+n+1~r
+14
+Caching: Buffer cache
+사용자 application
+디스크
+블록 1
+디스크
+블록 23
+디스크
+블록 24
+7장. File
+2
+목 차
+• Disk 구조
+• File system 구조
+• inode(index node)
+• Virtual File System
+• Kernel data structures for open files
+• UNIX file access primitives
+• Standard I/O Libraries
+• File System의 연결(mount)
+File 관련 issue
+• 파일 관련 issue
+– 사용자가 사용하는 이름과 disk 상의 데이터를 연결하는 객체
+– 파일 속성 제어
+– 파일 접근 제어
+– 파일 계층 구조 지원
+– 장치 파일 지원
+• Linux file access primitives – open, creat : 파일 열기 or 생성
+– close : 파일 닫기
+– read : 파일에서 정보 추출
+– write : 파일에 정보 기록
+– lseek : 파일 접근 위치 변경
+– unlink, remove : 파일 삭제
+– fcntl : 파일 속성 제어
+– …
+3
+Disk의 물리적 구성 요소
+ü Head, ARM
+ü Platter, Spindle
+ü Surface, Track, Sector, Cylinder
+4
+Disk의 물리적 구성 요소
+• 데이터 접근 방법
+– Sector addressing : surface(head), track(cylinder), sector – Heads move to appropriate track : 탐색 시간 (Seek time) – Wait for the sector to appear under the head : 회전 지연 시간
+(rotational latency) – Read/Write the sector: 데이터 전달 시간 (transmission time)
+– Seek time과 Rotational Latency를 줄이는 것이 중요
+è 다양한 디스크 스케줄링 방법 존재, parallel access 이용
+5
+Disk의 논리적 구조
+• 논리적 관점 (Linux 입장에서 디스크 구조) – 디스크는 디스크 블록들의 집합 (disk is a collection of disk
+blocks) – 디스크 블록의 크기는 보통 페이지 프레임의 크기와 같다 (4K,
+8K) – 블록 번호를 Sector Address로 변환하는 작업은 컨트롤러나
+디스크 드라이버에서 수행
+1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 ….
+0
+6
+Disk 블록 관리
+• 시나리오
+– 새로운 14 K 크기의 파일을 디스크에게 쓰려고 함
+– 디스크 블록의 크기는 4K로 가정 (따라서 4개의 디스크 블록이 필요) – 아래 그림에서 빗금이 있는 디스크 블록들은 이미 사용 중인 (파일의 데
+이터를 갖고 있는) 블록이라고 가정
+– 어떤 디스크 블록들을 할당할 것인가? (disk block allocation problem)
+• 디스크 블록 할당 방법
+– 연속 할당 방법 (sequential allocation) – 불연속 할당 방법 (non sequential allocation)
+0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 15 16 ..
+7
+Disk 블록 관리
+• 연속 할당 방법
+new file name
+start size 0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 .. 15 16
+8
+Disk 블록 관리
+• 불연속 할당 방법 : 블록 체인 (block chain) 방법
+– 현재 시나리오에서는 1, 5, 6, 9 블록을 할당
+– 할당된 블록을 링크로 연결
+new file name
+0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 .. 15 16
+9
+Disk 블록 관리
+• 불연속 할당 방법 : 인덱스 블록 (index block) 기법
+new file name
+index block
+…...
+0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 .. 15 16
+10
+File System 구조
+• 파일 시스템
+– 디스크의 각 파티션마다 존재
+– 4 부분으로 구성 : boot, super block, inode, data blocks – mkfs, newfs 등의 명령으로 생성
+system
+(PC)
+/dev/hda /dev/hdb
+/dev/hda1
+/dev/hda2
+/dev/hda3
+boot
+super block
+i-node
+disk blocks
+11
+File System 구조
+• 수퍼 블록 (super block) – 파일 시스템의 정보 관리하는 객체 (파일의 정보를 inode가 관리
+하는 것과 유사) – 파일 시스템 유형 : ext2/4, nfs, msdos, coda, proc, ntfs, …
+– Ext2/4의 경우
+• free inode와 free block들을 bitmap으로 관리
+• block group 정의 (ffs의 cylinder group와 유사한 개념)
+• 결함 허용 기능 제공
+– nfs (Network File System by Sun)의 경우
+• 각 파일 인터페이스를 서버에 대한 RPC로 변환
+• XDR 사용
+• 약한 일관성 (weak consistency) 보장
+12
+Structure of the Ext2 File System
+Block group 0 Block group 1 ... Block group n Boot
+block
+Super
+block
+Group
+descriptors
+Block
+bitmap
+Inode
+bitmap
+Inode
+blocks Data blocks
+partition 2 partition 3
+hard disk
+Ext2 file system
+block group
+partition 1
+13
+UNIX File System
+• File system layout – Bootstrap block(0)- kernel loading program
+– Super block(1) - file system information usually kept in memory
+• # of blocks for file system ( r)
+• # of blocks for inode blocks (n-1)
+• # of blocks for data blocks (r-n)
+• File system last update time
+• A list of free data block numbers
+• A list of free inode numbers – Inode blocks(2 ~ n)
+• A list of inode structures – Data blocks(n+1 ~ r)
+• A list of data blocks
+Bootstrap block
+Super block
+Inode blocks
+Data blocks
+0
+1
+2~n
+n+1~r
+14
+Caching: Buffer cache
+사용자 application
+디스크
+블록 1
+디스크
+블록 23
+디스크
+블록 24
+7장. File
+2
+목 차
+• Disk 구조
+• File system 구조
+• inode(index node)
+• Virtual File System
+• Kernel data structures for open files
+• UNIX file access primitives
+• Standard I/O Libraries
+• File System의 연결(mount)
+File 관련 issue
+• 파일 관련 issue
+– 사용자가 사용하는 이름과 disk 상의 데이터를 연결하는 객체
+– 파일 속성 제어
+– 파일 접근 제어
+– 파일 계층 구조 지원
+– 장치 파일 지원
+• Linux file access primitives – open, creat : 파일 열기 or 생성
+– close : 파일 닫기
+– read : 파일에서 정보 추출
+– write : 파일에 정보 기록
+– lseek : 파일 접근 위치 변경
+– unlink, remove : 파일 삭제
+– fcntl : 파일 속성 제어
+– …
+3
+Disk의 물리적 구성 요소
+ü Head, ARM
+ü Platter, Spindle
+ü Surface, Track, Sector, Cylinder
+4
+Disk의 물리적 구성 요소
+• 데이터 접근 방법
+– Sector addressing : surface(head), track(cylinder), sector – Heads move to appropriate track : 탐색 시간 (Seek time) – Wait for the sector to appear under the head : 회전 지연 시간
+(rotational latency) – Read/Write the sector: 데이터 전달 시간 (transmission time)
+– Seek time과 Rotational Latency를 줄이는 것이 중요
+è 다양한 디스크 스케줄링 방법 존재, parallel access 이용
+5
+Disk의 논리적 구조
+• 논리적 관점 (Linux 입장에서 디스크 구조) – 디스크는 디스크 블록들의 집합 (disk is a collection of disk
+blocks) – 디스크 블록의 크기는 보통 페이지 프레임의 크기와 같다 (4K,
+8K) – 블록 번호를 Sector Address로 변환하는 작업은 컨트롤러나
+디스크 드라이버에서 수행
+1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 ….
+0
+6
+Disk 블록 관리
+• 시나리오
+– 새로운 14 K 크기의 파일을 디스크에게 쓰려고 함
+– 디스크 블록의 크기는 4K로 가정 (따라서 4개의 디스크 블록이 필요) – 아래 그림에서 빗금이 있는 디스크 블록들은 이미 사용 중인 (파일의 데
+이터를 갖고 있는) 블록이라고 가정
+– 어떤 디스크 블록들을 할당할 것인가? (disk block allocation problem)
+• 디스크 블록 할당 방법
+– 연속 할당 방법 (sequential allocation) – 불연속 할당 방법 (non sequential allocation)
+0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 15 16 ..
+7
+Disk 블록 관리
+• 연속 할당 방법
+new file name
+start size 0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 .. 15 16
+8
+Disk 블록 관리
+• 불연속 할당 방법 : 블록 체인 (block chain) 방법
+– 현재 시나리오에서는 1, 5, 6, 9 블록을 할당
+– 할당된 블록을 링크로 연결
+new file name
+0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 .. 15 16
+9
+Disk 블록 관리
+• 불연속 할당 방법 : 인덱스 블록 (index block) 기법
+new file name
+index block
+…...
+0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 .. 15 16
+10
+File System 구조
+• 파일 시스템
+– 디스크의 각 파티션마다 존재
+– 4 부분으로 구성 : boot, super block, inode, data blocks – mkfs, newfs 등의 명령으로 생성
+system
+(PC)
+/dev/hda /dev/hdb
+/dev/hda1
+/dev/hda2
+/dev/hda3
+boot
+super block
+i-node
+disk blocks
+11
+File System 구조
+• 수퍼 블록 (super block) – 파일 시스템의 정보 관리하는 객체 (파일의 정보를 inode가 관리
+하는 것과 유사) – 파일 시스템 유형 : ext2/4, nfs, msdos, coda, proc, ntfs, …
+– Ext2/4의 경우
+• free inode와 free block들을 bitmap으로 관리
+• block group 정의 (ffs의 cylinder group와 유사한 개념)
+• 결함 허용 기능 제공
+– nfs (Network File System by Sun)의 경우
+• 각 파일 인터페이스를 서버에 대한 RPC로 변환
+• XDR 사용
+• 약한 일관성 (weak consistency) 보장
+12
+Structure of the Ext2 File System
+Block group 0 Block group 1 ... Block group n Boot
+block
+Super
+block
+Group
+descriptors
+Block
+bitmap
+Inode
+bitmap
+Inode
+blocks Data blocks
+partition 2 partition 3
+hard disk
+Ext2 file system
+block group
+partition 1
+13
+UNIX File System
+• File system layout – Bootstrap block(0)- kernel loading program
+– Super block(1) - file system information usually kept in memory
+• # of blocks for file system ( r)
+• # of blocks for inode blocks (n-1)
+• # of blocks for data blocks (r-n)
+• File system last update time
+• A list of free data block numbers
+• A list of free inode numbers – Inode blocks(2 ~ n)
+• A list of inode structures – Data blocks(n+1 ~ r)
+• A list of data blocks
+Bootstrap block
+Super block
+Inode blocks
+Data blocks
+0
+1
+2~n
+n+1~r
+14
+Caching: Buffer cache
+사용자 application
+디스크
+블록 1
+디스크
+블록 23
+디스크
+블록 24
+7장. File
+2
+목 차
+• Disk 구조
+• File system 구조
+• inode(index node)
+• Virtual File System
+• Kernel data structures for open files
+• UNIX file access primitives
+• Standard I/O Libraries
+• File System의 연결(mount)
+File 관련 issue
+• 파일 관련 issue
+– 사용자가 사용하는 이름과 disk 상의 데이터를 연결하는 객체
+– 파일 속성 제어
+– 파일 접근 제어
+– 파일 계층 구조 지원
+– 장치 파일 지원
+• Linux file access primitives – open, creat : 파일 열기 or 생성
+– close : 파일 닫기
+– read : 파일에서 정보 추출
+– write : 파일에 정보 기록
+– lseek : 파일 접근 위치 변경
+– unlink, remove : 파일 삭제
+– fcntl : 파일 속성 제어
+– …
+3
+Disk의 물리적 구성 요소
+ü Head, ARM
+ü Platter, Spindle
+ü Surface, Track, Sector, Cylinder
+4
+Disk의 물리적 구성 요소
+• 데이터 접근 방법
+– Sector addressing : surface(head), track(cylinder), sector – Heads move to appropriate track : 탐색 시간 (Seek time) – Wait for the sector to appear under the head : 회전 지연 시간
+(rotational latency) – Read/Write the sector: 데이터 전달 시간 (transmission time)
+– Seek time과 Rotational Latency를 줄이는 것이 중요
+è 다양한 디스크 스케줄링 방법 존재, parallel access 이용
+5
+Disk의 논리적 구조
+• 논리적 관점 (Linux 입장에서 디스크 구조) – 디스크는 디스크 블록들의 집합 (disk is a collection of disk
+blocks) – 디스크 블록의 크기는 보통 페이지 프레임의 크기와 같다 (4K,
+8K) – 블록 번호를 Sector Address로 변환하는 작업은 컨트롤러나
+디스크 드라이버에서 수행
+1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 ….
+0
+6
+Disk 블록 관리
+• 시나리오
+– 새로운 14 K 크기의 파일을 디스크에게 쓰려고 함
+– 디스크 블록의 크기는 4K로 가정 (따라서 4개의 디스크 블록이 필요) – 아래 그림에서 빗금이 있는 디스크 블록들은 이미 사용 중인 (파일의 데
+이터를 갖고 있는) 블록이라고 가정
+– 어떤 디스크 블록들을 할당할 것인가? (disk block allocation problem)
+• 디스크 블록 할당 방법
+– 연속 할당 방법 (sequential allocation) – 불연속 할당 방법 (non sequential allocation)
+0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 15 16 ..
+7
+Disk 블록 관리
+• 연속 할당 방법
+new file name
+start size 0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 .. 15 16
+8
+Disk 블록 관리
+• 불연속 할당 방법 : 블록 체인 (block chain) 방법
+– 현재 시나리오에서는 1, 5, 6, 9 블록을 할당
+– 할당된 블록을 링크로 연결
+new file name
+0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 .. 15 16
+9
+Disk 블록 관리
+• 불연속 할당 방법 : 인덱스 블록 (index block) 기법
+new file name
+index block
+…...
+0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 .. 15 16
+10
+File System 구조
+• 파일 시스템
+– 디스크의 각 파티션마다 존재
+– 4 부분으로 구성 : boot, super block, inode, data blocks – mkfs, newfs 등의 명령으로 생성
+system
+(PC)
+/dev/hda /dev/hdb
+/dev/hda1
+/dev/hda2
+/dev/hda3
+boot
+super block
+i-node
+disk blocks
+11
+File System 구조
+• 수퍼 블록 (super block) – 파일 시스템의 정보 관리하는 객체 (파일의 정보를 inode가 관리
+하는 것과 유사) – 파일 시스템 유형 : ext2/4, nfs, msdos, coda, proc, ntfs, …
+– Ext2/4의 경우
+• free inode와 free block들을 bitmap으로 관리
+• block group 정의 (ffs의 cylinder group와 유사한 개념)
+• 결함 허용 기능 제공
+– nfs (Network File System by Sun)의 경우
+• 각 파일 인터페이스를 서버에 대한 RPC로 변환
+• XDR 사용
+• 약한 일관성 (weak consistency) 보장
+12
+Structure of the Ext2 File System
+Block group 0 Block group 1 ... Block group n Boot
+block
+Super
+block
+Group
+descriptors
+Block
+bitmap
+Inode
+bitmap
+Inode
+blocks Data blocks
+partition 2 partition 3
+hard disk
+Ext2 file system
+block group
+partition 1
+13
+UNIX File System
+• File system layout – Bootstrap block(0)- kernel loading program
+– Super block(1) - file system information usually kept in memory
+• # of blocks for file system ( r)
+• # of blocks for inode blocks (n-1)
+• # of blocks for data blocks (r-n)
+• File system last update time
+• A list of free data block numbers
+• A list of free inode numbers – Inode blocks(2 ~ n)
+• A list of inode structures – Data blocks(n+1 ~ r)
+• A list of data blocks
+Bootstrap block
+Super block
+Inode blocks
+Data blocks
+0
+1
+2~n
+n+1~r
+14
+Caching: Buffer cache
+사용자 application
+디스크
+블록 1
+디스크
+블록 23
+디스크
+블록 24
+7장. File
+2
+목 차
+• Disk 구조
+• File system 구조
+• inode(index node)
+• Virtual File System
+• Kernel data structures for open files
+• UNIX file access primitives
+• Standard I/O Libraries
+• File System의 연결(mount)
+File 관련 issue
+• 파일 관련 issue
+– 사용자가 사용하는 이름과 disk 상의 데이터를 연결하는 객체
+– 파일 속성 제어
+– 파일 접근 제어
+– 파일 계층 구조 지원
+– 장치 파일 지원
+• Linux file access primitives – open, creat : 파일 열기 or 생성
+– close : 파일 닫기
+– read : 파일에서 정보 추출
+– write : 파일에 정보 기록
+– lseek : 파일 접근 위치 변경
+– unlink, remove : 파일 삭제
+– fcntl : 파일 속성 제어
+– …
+3
+Disk의 물리적 구성 요소
+ü Head, ARM
+ü Platter, Spindle
+ü Surface, Track, Sector, Cylinder
+4
+Disk의 물리적 구성 요소
+• 데이터 접근 방법
+– Sector addressing : surface(head), track(cylinder), sector – Heads move to appropriate track : 탐색 시간 (Seek time) – Wait for the sector to appear under the head : 회전 지연 시간
+(rotational latency) – Read/Write the sector: 데이터 전달 시간 (transmission time)
+– Seek time과 Rotational Latency를 줄이는 것이 중요
+è 다양한 디스크 스케줄링 방법 존재, parallel access 이용
+5
+Disk의 논리적 구조
+• 논리적 관점 (Linux 입장에서 디스크 구조) – 디스크는 디스크 블록들의 집합 (disk is a collection of disk
+blocks) – 디스크 블록의 크기는 보통 페이지 프레임의 크기와 같다 (4K,
+8K) – 블록 번호를 Sector Address로 변환하는 작업은 컨트롤러나
+디스크 드라이버에서 수행
+1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 ….
+0
+6
+Disk 블록 관리
+• 시나리오
+– 새로운 14 K 크기의 파일을 디스크에게 쓰려고 함
+– 디스크 블록의 크기는 4K로 가정 (따라서 4개의 디스크 블록이 필요) – 아래 그림에서 빗금이 있는 디스크 블록들은 이미 사용 중인 (파일의 데
+이터를 갖고 있는) 블록이라고 가정
+– 어떤 디스크 블록들을 할당할 것인가? (disk block allocation problem)
+• 디스크 블록 할당 방법
+– 연속 할당 방법 (sequential allocation) – 불연속 할당 방법 (non sequential allocation)
+0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 15 16 ..
+7
+Disk 블록 관리
+• 연속 할당 방법
+new file name
+start size 0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 .. 15 16
+8
+Disk 블록 관리
+• 불연속 할당 방법 : 블록 체인 (block chain) 방법
+– 현재 시나리오에서는 1, 5, 6, 9 블록을 할당
+– 할당된 블록을 링크로 연결
+new file name
+0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 .. 15 16
+9
+Disk 블록 관리
+• 불연속 할당 방법 : 인덱스 블록 (index block) 기법
+new file name
+index block
+…...
+0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 .. 15 16
+10
+File System 구조
+• 파일 시스템
+– 디스크의 각 파티션마다 존재
+– 4 부분으로 구성 : boot, super block, inode, data blocks – mkfs, newfs 등의 명령으로 생성
+system
+(PC)
+/dev/hda /dev/hdb
+/dev/hda1
+/dev/hda2
+/dev/hda3
+boot
+super block
+i-node
+disk blocks
+11
+File System 구조
+• 수퍼 블록 (super block) – 파일 시스템의 정보 관리하는 객체 (파일의 정보를 inode가 관리
+하는 것과 유사) – 파일 시스템 유형 : ext2/4, nfs, msdos, coda, proc, ntfs, …
+– Ext2/4의 경우
+• free inode와 free block들을 bitmap으로 관리
+• block group 정의 (ffs의 cylinder group와 유사한 개념)
+• 결함 허용 기능 제공
+– nfs (Network File System by Sun)의 경우
+• 각 파일 인터페이스를 서버에 대한 RPC로 변환
+• XDR 사용
+• 약한 일관성 (weak consistency) 보장
+12
+Structure of the Ext2 File System
+Block group 0 Block group 1 ... Block group n Boot
+block
+Super
+block
+Group
+descriptors
+Block
+bitmap
+Inode
+bitmap
+Inode
+blocks Data blocks
+partition 2 partition 3
+hard disk
+Ext2 file system
+block group
+partition 1
+13
+UNIX File System
+• File system layout – Bootstrap block(0)- kernel loading program
+– Super block(1) - file system information usually kept in memory
+• # of blocks for file system ( r)
+• # of blocks for inode blocks (n-1)
+• # of blocks for data blocks (r-n)
+• File system last update time
+• A list of free data block numbers
+• A list of free inode numbers – Inode blocks(2 ~ n)
+• A list of inode structures – Data blocks(n+1 ~ r)
+• A list of data blocks
+Bootstrap block
+Super block
+Inode blocks
+Data blocks
+0
+1
+2~n
+n+1~r
+14
+Caching: Buffer cache
+사용자 application
+디스크
+블록 1
+디스크
+블록 23
+디스크
+블록 24
+7장. File
+2
+목 차
+• Disk 구조
+• File system 구조
+• inode(index node)
+• Virtual File System
+• Kernel data structures for open files
+• UNIX file access primitives
+• Standard I/O Libraries
+• File System의 연결(mount)
+File 관련 issue
+• 파일 관련 issue
+– 사용자가 사용하는 이름과 disk 상의 데이터를 연결하는 객체
+– 파일 속성 제어
+– 파일 접근 제어
+– 파일 계층 구조 지원
+– 장치 파일 지원
+• Linux file access primitives – open, creat : 파일 열기 or 생성
+– close : 파일 닫기
+– read : 파일에서 정보 추출
+– write : 파일에 정보 기록
+– lseek : 파일 접근 위치 변경
+– unlink, remove : 파일 삭제
+– fcntl : 파일 속성 제어
+– …
+3
+Disk의 물리적 구성 요소
+ü Head, ARM
+ü Platter, Spindle
+ü Surface, Track, Sector, Cylinder
+4
+Disk의 물리적 구성 요소
+• 데이터 접근 방법
+– Sector addressing : surface(head), track(cylinder), sector – Heads move to appropriate track : 탐색 시간 (Seek time) – Wait for the sector to appear under the head : 회전 지연 시간
+(rotational latency) – Read/Write the sector: 데이터 전달 시간 (transmission time)
+– Seek time과 Rotational Latency를 줄이는 것이 중요
+è 다양한 디스크 스케줄링 방법 존재, parallel access 이용
+5
+Disk의 논리적 구조
+• 논리적 관점 (Linux 입장에서 디스크 구조) – 디스크는 디스크 블록들의 집합 (disk is a collection of disk
+blocks) – 디스크 블록의 크기는 보통 페이지 프레임의 크기와 같다 (4K,
+8K) – 블록 번호를 Sector Address로 변환하는 작업은 컨트롤러나
+디스크 드라이버에서 수행
+1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 ….
+0
+6
+Disk 블록 관리
+• 시나리오
+– 새로운 14 K 크기의 파일을 디스크에게 쓰려고 함
+– 디스크 블록의 크기는 4K로 가정 (따라서 4개의 디스크 블록이 필요) – 아래 그림에서 빗금이 있는 디스크 블록들은 이미 사용 중인 (파일의 데
+이터를 갖고 있는) 블록이라고 가정
+– 어떤 디스크 블록들을 할당할 것인가? (disk block allocation problem)
+• 디스크 블록 할당 방법
+– 연속 할당 방법 (sequential allocation) – 불연속 할당 방법 (non sequential allocation)
+0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 15 16 ..
+7
+Disk 블록 관리
+• 연속 할당 방법
+new file name
+start size 0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 .. 15 16
+8
+Disk 블록 관리
+• 불연속 할당 방법 : 블록 체인 (block chain) 방법
+– 현재 시나리오에서는 1, 5, 6, 9 블록을 할당
+– 할당된 블록을 링크로 연결
+new file name
+0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 .. 15 16
+9
+Disk 블록 관리
+• 불연속 할당 방법 : 인덱스 블록 (index block) 기법
+new file name
+index block
+…...
+0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 .. 15 16
+10
+File System 구조
+• 파일 시스템
+– 디스크의 각 파티션마다 존재
+– 4 부분으로 구성 : boot, super block, inode, data blocks – mkfs, newfs 등의 명령으로 생성
+system
+(PC)
+/dev/hda /dev/hdb
+/dev/hda1
+/dev/hda2
+/dev/hda3
+boot
+super block
+i-node
+disk blocks
+11
+File System 구조
+• 수퍼 블록 (super block) – 파일 시스템의 정보 관리하는 객체 (파일의 정보를 inode가 관리
+하는 것과 유사) – 파일 시스템 유형 : ext2/4, nfs, msdos, coda, proc, ntfs, …
+– Ext2/4의 경우
+• free inode와 free block들을 bitmap으로 관리
+• block group 정의 (ffs의 cylinder group와 유사한 개념)
+• 결함 허용 기능 제공
+– nfs (Network File System by Sun)의 경우
+• 각 파일 인터페이스를 서버에 대한 RPC로 변환
+• XDR 사용
+• 약한 일관성 (weak consistency) 보장
+12
+Structure of the Ext2 File System
+Block group 0 Block group 1 ... Block group n Boot
+block
+Super
+block
+Group
+descriptors
+Block
+bitmap
+Inode
+bitmap
+Inode
+blocks Data blocks
+partition 2 partition 3
+hard disk
+Ext2 file system
+block group
+partition 1
+13
+UNIX File System
+• File system layout – Bootstrap block(0)- kernel loading program
+– Super block(1) - file system information usually kept in memory
+• # of blocks for file system ( r)
+• # of blocks for inode blocks (n-1)
+• # of blocks for data blocks (r-n)
+• File system last update time
+• A list of free data block numbers
+• A list of free inode numbers – Inode blocks(2 ~ n)
+• A list of inode structures – Data blocks(n+1 ~ r)
+• A list of data blocks
+Bootstrap block
+Super block
+Inode blocks
+Data blocks
+0
+1
+2~n
+n+1~r
+14
+Caching: Buffer cache
+사용자 application
+디스크
+블록 1
+디스크
+블록 23
+디스크
+블록 24
+7장. File
+2
+목 차
+• Disk 구조
+• File system 구조
+• inode(index node)
+• Virtual File System
+• Kernel data structures for open files
+• UNIX file access primitives
+• Standard I/O Libraries
+• File System의 연결(mount)
+File 관련 issue
+• 파일 관련 issue
+– 사용자가 사용하는 이름과 disk 상의 데이터를 연결하는 객체
+– 파일 속성 제어
+– 파일 접근 제어
+– 파일 계층 구조 지원
+– 장치 파일 지원
+• Linux file access primitives – open, creat : 파일 열기 or 생성
+– close : 파일 닫기
+– read : 파일에서 정보 추출
+– write : 파일에 정보 기록
+– lseek : 파일 접근 위치 변경
+– unlink, remove : 파일 삭제
+– fcntl : 파일 속성 제어
+– …
+3
+Disk의 물리적 구성 요소
+ü Head, ARM
+ü Platter, Spindle
+ü Surface, Track, Sector, Cylinder
+4
+Disk의 물리적 구성 요소
+• 데이터 접근 방법
+– Sector addressing : surface(head), track(cylinder), sector – Heads move to appropriate track : 탐색 시간 (Seek time) – Wait for the sector to appear under the head : 회전 지연 시간
+(rotational latency) – Read/Write the sector: 데이터 전달 시간 (transmission time)
+– Seek time과 Rotational Latency를 줄이는 것이 중요
+è 다양한 디스크 스케줄링 방법 존재, parallel access 이용
+5
+Disk의 논리적 구조
+• 논리적 관점 (Linux 입장에서 디스크 구조) – 디스크는 디스크 블록들의 집합 (disk is a collection of disk
+blocks) – 디스크 블록의 크기는 보통 페이지 프레임의 크기와 같다 (4K,
+8K) – 블록 번호를 Sector Address로 변환하는 작업은 컨트롤러나
+디스크 드라이버에서 수행
+1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 ….
+0
+6
+Disk 블록 관리
+• 시나리오
+– 새로운 14 K 크기의 파일을 디스크에게 쓰려고 함
+– 디스크 블록의 크기는 4K로 가정 (따라서 4개의 디스크 블록이 필요) – 아래 그림에서 빗금이 있는 디스크 블록들은 이미 사용 중인 (파일의 데
+이터를 갖고 있는) 블록이라고 가정
+– 어떤 디스크 블록들을 할당할 것인가? (disk block allocation problem)
+• 디스크 블록 할당 방법
+– 연속 할당 방법 (sequential allocation) – 불연속 할당 방법 (non sequential allocation)
+0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 15 16 ..
+7
+Disk 블록 관리
+• 연속 할당 방법
+new file name
+start size 0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 .. 15 16
+8
+Disk 블록 관리
+• 불연속 할당 방법 : 블록 체인 (block chain) 방법
+– 현재 시나리오에서는 1, 5, 6, 9 블록을 할당
+– 할당된 블록을 링크로 연결
+new file name
+0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 .. 15 16
+9
+Disk 블록 관리
+• 불연속 할당 방법 : 인덱스 블록 (index block) 기법
+new file name
+index block
+…...
+0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 .. 15 16
+10
+File System 구조
+• 파일 시스템
+– 디스크의 각 파티션마다 존재
+– 4 부분으로 구성 : boot, super block, inode, data blocks – mkfs, newfs 등의 명령으로 생성
+system
+(PC)
+/dev/hda /dev/hdb
+/dev/hda1
+/dev/hda2
+/dev/hda3
+boot
+super block
+i-node
+disk blocks
+11
+File System 구조
+• 수퍼 블록 (super block) – 파일 시스템의 정보 관리하는 객체 (파일의 정보를 inode가 관리
+하는 것과 유사) – 파일 시스템 유형 : ext2/4, nfs, msdos, coda, proc, ntfs, …
+– Ext2/4의 경우
+• free inode와 free block들을 bitmap으로 관리
+• block group 정의 (ffs의 cylinder group와 유사한 개념)
+• 결함 허용 기능 제공
+– nfs (Network File System by Sun)의 경우
+• 각 파일 인터페이스를 서버에 대한 RPC로 변환
+• XDR 사용
+• 약한 일관성 (weak consistency) 보장
+12
+Structure of the Ext2 File System
+Block group 0 Block group 1 ... Block group n Boot
+block
+Super
+block
+Group
+descriptors
+Block
+bitmap
+Inode
+bitmap
+Inode
+blocks Data blocks
+partition 2 partition 3
+hard disk
+Ext2 file system
+block group
+partition 1
+13
+UNIX File System
+• File system layout – Bootstrap block(0)- kernel loading program
+– Super block(1) - file system information usually kept in memory
+• # of blocks for file system ( r)
+• # of blocks for inode blocks (n-1)
+• # of blocks for data blocks (r-n)
+• File system last update time
+• A list of free data block numbers
+• A list of free inode numbers – Inode blocks(2 ~ n)
+• A list of inode structures – Data blocks(n+1 ~ r)
+• A list of data blocks
+Bootstrap block
+Super block
+Inode blocks
+Data blocks
+0
+1
+2~n
+n+1~r
+14
+Caching: Buffer cache
+사용자 application
+디스크
+블록 1
+디스크
+블록 23
+디스크
+블록 24
+7장. File
+2
+목 차
+• Disk 구조
+• File system 구조
+• inode(index node)
+• Virtual File System
+• Kernel data structures for open files
+• UNIX file access primitives
+• Standard I/O Libraries
+• File System의 연결(mount)
+File 관련 issue
+• 파일 관련 issue
+– 사용자가 사용하는 이름과 disk 상의 데이터를 연결하는 객체
+– 파일 속성 제어
+– 파일 접근 제어
+– 파일 계층 구조 지원
+– 장치 파일 지원
+• Linux file access primitives – open, creat : 파일 열기 or 생성
+– close : 파일 닫기
+– read : 파일에서 정보 추출
+– write : 파일에 정보 기록
+– lseek : 파일 접근 위치 변경
+– unlink, remove : 파일 삭제
+– fcntl : 파일 속성 제어
+– …
+3
+Disk의 물리적 구성 요소
+ü Head, ARM
+ü Platter, Spindle
+ü Surface, Track, Sector, Cylinder
+4
+Disk의 물리적 구성 요소
+• 데이터 접근 방법
+– Sector addressing : surface(head), track(cylinder), sector – Heads move to appropriate track : 탐색 시간 (Seek time) – Wait for the sector to appear under the head : 회전 지연 시간
+(rotational latency) – Read/Write the sector: 데이터 전달 시간 (transmission time)
+– Seek time과 Rotational Latency를 줄이는 것이 중요
+è 다양한 디스크 스케줄링 방법 존재, parallel access 이용
+5
+Disk의 논리적 구조
+• 논리적 관점 (Linux 입장에서 디스크 구조) – 디스크는 디스크 블록들의 집합 (disk is a collection of disk
+blocks) – 디스크 블록의 크기는 보통 페이지 프레임의 크기와 같다 (4K,
+8K) – 블록 번호를 Sector Address로 변환하는 작업은 컨트롤러나
+디스크 드라이버에서 수행
+1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 ….
+0
+6
+Disk 블록 관리
+• 시나리오
+– 새로운 14 K 크기의 파일을 디스크에게 쓰려고 함
+– 디스크 블록의 크기는 4K로 가정 (따라서 4개의 디스크 블록이 필요) – 아래 그림에서 빗금이 있는 디스크 블록들은 이미 사용 중인 (파일의 데
+이터를 갖고 있는) 블록이라고 가정
+– 어떤 디스크 블록들을 할당할 것인가? (disk block allocation problem)
+• 디스크 블록 할당 방법
+– 연속 할당 방법 (sequential allocation) – 불연속 할당 방법 (non sequential allocation)
+0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 15 16 ..
+7
+Disk 블록 관리
+• 연속 할당 방법
+new file name
+start size 0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 .. 15 16
+8
+Disk 블록 관리
+• 불연속 할당 방법 : 블록 체인 (block chain) 방법
+– 현재 시나리오에서는 1, 5, 6, 9 블록을 할당
+– 할당된 블록을 링크로 연결
+new file name
+0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 .. 15 16
+9
+Disk 블록 관리
+• 불연속 할당 방법 : 인덱스 블록 (index block) 기법
+new file name
+index block
+…...
+0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 .. 15 16
+10
+File System 구조
+• 파일 시스템
+– 디스크의 각 파티션마다 존재
+– 4 부분으로 구성 : boot, super block, inode, data blocks – mkfs, newfs 등의 명령으로 생성
+system
+(PC)
+/dev/hda /dev/hdb
+/dev/hda1
+/dev/hda2
+/dev/hda3
+boot
+super block
+i-node
+disk blocks
+11
+File System 구조
+• 수퍼 블록 (super block) – 파일 시스템의 정보 관리하는 객체 (파일의 정보를 inode가 관리
+하는 것과 유사) – 파일 시스템 유형 : ext2/4, nfs, msdos, coda, proc, ntfs, …
+– Ext2/4의 경우
+• free inode와 free block들을 bitmap으로 관리
+• block group 정의 (ffs의 cylinder group와 유사한 개념)
+• 결함 허용 기능 제공
+– nfs (Network File System by Sun)의 경우
+• 각 파일 인터페이스를 서버에 대한 RPC로 변환
+• XDR 사용
+• 약한 일관성 (weak consistency) 보장
+12
+Structure of the Ext2 File System
+Block group 0 Block group 1 ... Block group n Boot
+block
+Super
+block
+Group
+descriptors
+Block
+bitmap
+Inode
+bitmap
+Inode
+blocks Data blocks
+partition 2 partition 3
+hard disk
+Ext2 file system
+block group
+partition 1
+13
+UNIX File System
+• File system layout – Bootstrap block(0)- kernel loading program
+– Super block(1) - file system information usually kept in memory
+• # of blocks for file system ( r)
+• # of blocks for inode blocks (n-1)
+• # of blocks for data blocks (r-n)
+• File system last update time
+• A list of free data block numbers
+• A list of free inode numbers – Inode blocks(2 ~ n)
+• A list of inode structures – Data blocks(n+1 ~ r)
+• A list of data blocks
+Bootstrap block
+Super block
+Inode blocks
+Data blocks
+0
+1
+2~n
+n+1~r
+14
+Caching: Buffer cache
+사용자 application
+디스크
+블록 1
+디스크
+블록 23
+디스크
+블록 24
+7장. File
+2
+목 차
+• Disk 구조
+• File system 구조
+• inode(index node)
+• Virtual File System
+• Kernel data structures for open files
+• UNIX file access primitives
+• Standard I/O Libraries
+• File System의 연결(mount)
+File 관련 issue
+• 파일 관련 issue
+– 사용자가 사용하는 이름과 disk 상의 데이터를 연결하는 객체
+– 파일 속성 제어
+– 파일 접근 제어
+– 파일 계층 구조 지원
+– 장치 파일 지원
+• Linux file access primitives – open, creat : 파일 열기 or 생성
+– close : 파일 닫기
+– read : 파일에서 정보 추출
+– write : 파일에 정보 기록
+– lseek : 파일 접근 위치 변경
+– unlink, remove : 파일 삭제
+– fcntl : 파일 속성 제어
+– …
+3
+Disk의 물리적 구성 요소
+ü Head, ARM
+ü Platter, Spindle
+ü Surface, Track, Sector, Cylinder
+4
+Disk의 물리적 구성 요소
+• 데이터 접근 방법
+– Sector addressing : surface(head), track(cylinder), sector – Heads move to appropriate track : 탐색 시간 (Seek time) – Wait for the sector to appear under the head : 회전 지연 시간
+(rotational latency) – Read/Write the sector: 데이터 전달 시간 (transmission time)
+– Seek time과 Rotational Latency를 줄이는 것이 중요
+è 다양한 디스크 스케줄링 방법 존재, parallel access 이용
+5
+Disk의 논리적 구조
+• 논리적 관점 (Linux 입장에서 디스크 구조) – 디스크는 디스크 블록들의 집합 (disk is a collection of disk
+blocks) – 디스크 블록의 크기는 보통 페이지 프레임의 크기와 같다 (4K,
+8K) – 블록 번호를 Sector Address로 변환하는 작업은 컨트롤러나
+디스크 드라이버에서 수행
+1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 ….
+0
+6
+Disk 블록 관리
+• 시나리오
+– 새로운 14 K 크기의 파일을 디스크에게 쓰려고 함
+– 디스크 블록의 크기는 4K로 가정 (따라서 4개의 디스크 블록이 필요) – 아래 그림에서 빗금이 있는 디스크 블록들은 이미 사용 중인 (파일의 데
+이터를 갖고 있는) 블록이라고 가정
+– 어떤 디스크 블록들을 할당할 것인가? (disk block allocation problem)
+• 디스크 블록 할당 방법
+– 연속 할당 방법 (sequential allocation) – 불연속 할당 방법 (non sequential allocation)
+0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 15 16 ..
+7
+Disk 블록 관리
+• 연속 할당 방법
+new file name
+start size 0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 .. 15 16
+8
+Disk 블록 관리
+• 불연속 할당 방법 : 블록 체인 (block chain) 방법
+– 현재 시나리오에서는 1, 5, 6, 9 블록을 할당
+– 할당된 블록을 링크로 연결
+new file name
+0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 .. 15 16
+9
+Disk 블록 관리
+• 불연속 할당 방법 : 인덱스 블록 (index block) 기법
+new file name
+index block
+…...
+0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 .. 15 16
+10
+File System 구조
+• 파일 시스템
+– 디스크의 각 파티션마다 존재
+– 4 부분으로 구성 : boot, super block, inode, data blocks – mkfs, newfs 등의 명령으로 생성
+system
+(PC)
+/dev/hda /dev/hdb
+/dev/hda1
+/dev/hda2
+/dev/hda3
+boot
+super block
+i-node
+disk blocks
+11
+File System 구조
+• 수퍼 블록 (super block) – 파일 시스템의 정보 관리하는 객체 (파일의 정보를 inode가 관리
+하는 것과 유사) – 파일 시스템 유형 : ext2/4, nfs, msdos, coda, proc, ntfs, …
+– Ext2/4의 경우
+• free inode와 free block들을 bitmap으로 관리
+• block group 정의 (ffs의 cylinder group와 유사한 개념)
+• 결함 허용 기능 제공
+– nfs (Network File System by Sun)의 경우
+• 각 파일 인터페이스를 서버에 대한 RPC로 변환
+• XDR 사용
+• 약한 일관성 (weak consistency) 보장
+12
+Structure of the Ext2 File System
+Block group 0 Block group 1 ... Block group n Boot
+block
+Super
+block
+Group
+descriptors
+Block
+bitmap
+Inode
+bitmap
+Inode
+blocks Data blocks
+partition 2 partition 3
+hard disk
+Ext2 file system
+block group
+partition 1
+13
+UNIX File System
+• File system layout – Bootstrap block(0)- kernel loading program
+– Super block(1) - file system information usually kept in memory
+• # of blocks for file system ( r)
+• # of blocks for inode blocks (n-1)
+• # of blocks for data blocks (r-n)
+• File system last update time
+• A list of free data block numbers
+• A list of free inode numbers – Inode blocks(2 ~ n)
+• A list of inode structures – Data blocks(n+1 ~ r)
+• A list of data blocks
+Bootstrap block
+Super block
+Inode blocks
+Data blocks
+0
+1
+2~n
+n+1~r
+14
+Caching: Buffer cache
+사용자 application
+디스크
+블록 1
+디스크
+블록 23
+디스크
+블록 24
+7장. File
+2
+목 차
+• Disk 구조
+• File system 구조
+• inode(index node)
+• Virtual File System
+• Kernel data structures for open files
+• UNIX file access primitives
+• Standard I/O Libraries
+• File System의 연결(mount)
+File 관련 issue
+• 파일 관련 issue
+– 사용자가 사용하는 이름과 disk 상의 데이터를 연결하는 객체
+– 파일 속성 제어
+– 파일 접근 제어
+– 파일 계층 구조 지원
+– 장치 파일 지원
+• Linux file access primitives – open, creat : 파일 열기 or 생성
+– close : 파일 닫기
+– read : 파일에서 정보 추출
+– write : 파일에 정보 기록
+– lseek : 파일 접근 위치 변경
+– unlink, remove : 파일 삭제
+– fcntl : 파일 속성 제어
+– …
+3
+Disk의 물리적 구성 요소
+ü Head, ARM
+ü Platter, Spindle
+ü Surface, Track, Sector, Cylinder
+4
+Disk의 물리적 구성 요소
+• 데이터 접근 방법
+– Sector addressing : surface(head), track(cylinder), sector – Heads move to appropriate track : 탐색 시간 (Seek time) – Wait for the sector to appear under the head : 회전 지연 시간
+(rotational latency) – Read/Write the sector: 데이터 전달 시간 (transmission time)
+– Seek time과 Rotational Latency를 줄이는 것이 중요
+è 다양한 디스크 스케줄링 방법 존재, parallel access 이용
+5
+Disk의 논리적 구조
+• 논리적 관점 (Linux 입장에서 디스크 구조) – 디스크는 디스크 블록들의 집합 (disk is a collection of disk
+blocks) – 디스크 블록의 크기는 보통 페이지 프레임의 크기와 같다 (4K,
+8K) – 블록 번호를 Sector Address로 변환하는 작업은 컨트롤러나
+디스크 드라이버에서 수행
+1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 ….
+0
+6
+Disk 블록 관리
+• 시나리오
+– 새로운 14 K 크기의 파일을 디스크에게 쓰려고 함
+– 디스크 블록의 크기는 4K로 가정 (따라서 4개의 디스크 블록이 필요) – 아래 그림에서 빗금이 있는 디스크 블록들은 이미 사용 중인 (파일의 데
+이터를 갖고 있는) 블록이라고 가정
+– 어떤 디스크 블록들을 할당할 것인가? (disk block allocation problem)
+• 디스크 블록 할당 방법
+– 연속 할당 방법 (sequential allocation) – 불연속 할당 방법 (non sequential allocation)
+0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 15 16 ..
+7
+Disk 블록 관리
+• 연속 할당 방법
+new file name
+start size 0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 .. 15 16
+8
+Disk 블록 관리
+• 불연속 할당 방법 : 블록 체인 (block chain) 방법
+– 현재 시나리오에서는 1, 5, 6, 9 블록을 할당
+– 할당된 블록을 링크로 연결
+new file name
+0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 .. 15 16
+9
+Disk 블록 관리
+• 불연속 할당 방법 : 인덱스 블록 (index block) 기법
+new file name
+index block
+…...
+0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 .. 15 16
+10
+File System 구조
+• 파일 시스템
+– 디스크의 각 파티션마다 존재
+– 4 부분으로 구성 : boot, super block, inode, data blocks – mkfs, newfs 등의 명령으로 생성
+system
+(PC)
+/dev/hda /dev/hdb
+/dev/hda1
+/dev/hda2
+/dev/hda3
+boot
+super block
+i-node
+disk blocks
+11
+File System 구조
+• 수퍼 블록 (super block) – 파일 시스템의 정보 관리하는 객체 (파일의 정보를 inode가 관리
+하는 것과 유사) – 파일 시스템 유형 : ext2/4, nfs, msdos, coda, proc, ntfs, …
+– Ext2/4의 경우
+• free inode와 free block들을 bitmap으로 관리
+• block group 정의 (ffs의 cylinder group와 유사한 개념)
+• 결함 허용 기능 제공
+– nfs (Network File System by Sun)의 경우
+• 각 파일 인터페이스를 서버에 대한 RPC로 변환
+• XDR 사용
+• 약한 일관성 (weak consistency) 보장
+12
+Structure of the Ext2 File System
+Block group 0 Block group 1 ... Block group n Boot
+block
+Super
+block
+Group
+descriptors
+Block
+bitmap
+Inode
+bitmap
+Inode
+blocks Data blocks
+partition 2 partition 3
+hard disk
+Ext2 file system
+block group
+partition 1
+13
+UNIX File System
+• File system layout – Bootstrap block(0)- kernel loading program
+– Super block(1) - file system information usually kept in memory
+• # of blocks for file system ( r)
+• # of blocks for inode blocks (n-1)
+• # of blocks for data blocks (r-n)
+• File system last update time
+• A list of free data block numbers
+• A list of free inode numbers – Inode blocks(2 ~ n)
+• A list of inode structures – Data blocks(n+1 ~ r)
+• A list of data blocks
+Bootstrap block
+Super block
+Inode blocks
+Data blocks
+0
+1
+2~n
+n+1~r
+14
+Caching: Buffer cache
+사용자 application
+디스크
+블록 1
+디스크
+블록 23
+디스크
+블록 24
+7장. File
+2
+목 차
+• Disk 구조
+• File system 구조
+• inode(index node)
+• Virtual File System
+• Kernel data structures for open files
+• UNIX file access primitives
+• Standard I/O Libraries
+• File System의 연결(mount)
+File 관련 issue
+• 파일 관련 issue
+– 사용자가 사용하는 이름과 disk 상의 데이터를 연결하는 객체
+– 파일 속성 제어
+– 파일 접근 제어
+– 파일 계층 구조 지원
+– 장치 파일 지원
+• Linux file access primitives – open, creat : 파일 열기 or 생성
+– close : 파일 닫기
+– read : 파일에서 정보 추출
+– write : 파일에 정보 기록
+– lseek : 파일 접근 위치 변경
+– unlink, remove : 파일 삭제
+– fcntl : 파일 속성 제어
+– …
+3
+Disk의 물리적 구성 요소
+ü Head, ARM
+ü Platter, Spindle
+ü Surface, Track, Sector, Cylinder
+4
+Disk의 물리적 구성 요소
+• 데이터 접근 방법
+– Sector addressing : surface(head), track(cylinder), sector – Heads move to appropriate track : 탐색 시간 (Seek time) – Wait for the sector to appear under the head : 회전 지연 시간
+(rotational latency) – Read/Write the sector: 데이터 전달 시간 (transmission time)
+– Seek time과 Rotational Latency를 줄이는 것이 중요
+è 다양한 디스크 스케줄링 방법 존재, parallel access 이용
+5
+Disk의 논리적 구조
+• 논리적 관점 (Linux 입장에서 디스크 구조) – 디스크는 디스크 블록들의 집합 (disk is a collection of disk
+blocks) – 디스크 블록의 크기는 보통 페이지 프레임의 크기와 같다 (4K,
+8K) – 블록 번호를 Sector Address로 변환하는 작업은 컨트롤러나
+디스크 드라이버에서 수행
+1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 ….
+0
+6
+Disk 블록 관리
+• 시나리오
+– 새로운 14 K 크기의 파일을 디스크에게 쓰려고 함
+– 디스크 블록의 크기는 4K로 가정 (따라서 4개의 디스크 블록이 필요) – 아래 그림에서 빗금이 있는 디스크 블록들은 이미 사용 중인 (파일의 데
+이터를 갖고 있는) 블록이라고 가정
+– 어떤 디스크 블록들을 할당할 것인가? (disk block allocation problem)
+• 디스크 블록 할당 방법
+– 연속 할당 방법 (sequential allocation) – 불연속 할당 방법 (non sequential allocation)
+0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 15 16 ..
+7
+Disk 블록 관리
+• 연속 할당 방법
+new file name
+start size 0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 .. 15 16
+8
+Disk 블록 관리
+• 불연속 할당 방법 : 블록 체인 (block chain) 방법
+– 현재 시나리오에서는 1, 5, 6, 9 블록을 할당
+– 할당된 블록을 링크로 연결
+new file name
+0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 .. 15 16
+9
+Disk 블록 관리
+• 불연속 할당 방법 : 인덱스 블록 (index block) 기법
+new file name
+index block
+…...
+0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 .. 15 16
+10
+File System 구조
+• 파일 시스템
+– 디스크의 각 파티션마다 존재
+– 4 부분으로 구성 : boot, super block, inode, data blocks – mkfs, newfs 등의 명령으로 생성
+system
+(PC)
+/dev/hda /dev/hdb
+/dev/hda1
+/dev/hda2
+/dev/hda3
+boot
+super block
+i-node
+disk blocks
+11
+File System 구조
+• 수퍼 블록 (super block) – 파일 시스템의 정보 관리하는 객체 (파일의 정보를 inode가 관리
+하는 것과 유사) – 파일 시스템 유형 : ext2/4, nfs, msdos, coda, proc, ntfs, …
+– Ext2/4의 경우
+• free inode와 free block들을 bitmap으로 관리
+• block group 정의 (ffs의 cylinder group와 유사한 개념)
+• 결함 허용 기능 제공
+– nfs (Network File System by Sun)의 경우
+• 각 파일 인터페이스를 서버에 대한 RPC로 변환
+• XDR 사용
+• 약한 일관성 (weak consistency) 보장
+12
+Structure of the Ext2 File System
+Block group 0 Block group 1 ... Block group n Boot
+block
+Super
+block
+Group
+descriptors
+Block
+bitmap
+Inode
+bitmap
+Inode
+blocks Data blocks
+partition 2 partition 3
+hard disk
+Ext2 file system
+block group
+partition 1
+13
+UNIX File System
+• File system layout – Bootstrap block(0)- kernel loading program
+– Super block(1) - file system information usually kept in memory
+• # of blocks for file system ( r)
+• # of blocks for inode blocks (n-1)
+• # of blocks for data blocks (r-n)
+• File system last update time
+• A list of free data block numbers
+• A list of free inode numbers – Inode blocks(2 ~ n)
+• A list of inode structures – Data blocks(n+1 ~ r)
+• A list of data blocks
+Bootstrap block
+Super block
+Inode blocks
+Data blocks
+0
+1
+2~n
+n+1~r
+14
+Caching: Buffer cache
+사용자 application
+디스크
+블록 1
+디스크
+블록 23
+디스크
+블록 24
+7장. File
+2
+목 차
+• Disk 구조
+• File system 구조
+• inode(index node)
+• Virtual File System
+• Kernel data structures for open files
+• UNIX file access primitives
+• Standard I/O Libraries
+• File System의 연결(mount)
+File 관련 issue
+• 파일 관련 issue
+– 사용자가 사용하는 이름과 disk 상의 데이터를 연결하는 객체
+– 파일 속성 제어
+– 파일 접근 제어
+– 파일 계층 구조 지원
+– 장치 파일 지원
+• Linux file access primitives – open, creat : 파일 열기 or 생성
+– close : 파일 닫기
+– read : 파일에서 정보 추출
+– write : 파일에 정보 기록
+– lseek : 파일 접근 위치 변경
+– unlink, remove : 파일 삭제
+– fcntl : 파일 속성 제어
+– …
+3
+Disk의 물리적 구성 요소
+ü Head, ARM
+ü Platter, Spindle
+ü Surface, Track, Sector, Cylinder
+4
+Disk의 물리적 구성 요소
+• 데이터 접근 방법
+– Sector addressing : surface(head), track(cylinder), sector – Heads move to appropriate track : 탐색 시간 (Seek time) – Wait for the sector to appear under the head : 회전 지연 시간
+(rotational latency) – Read/Write the sector: 데이터 전달 시간 (transmission time)
+– Seek time과 Rotational Latency를 줄이는 것이 중요
+è 다양한 디스크 스케줄링 방법 존재, parallel access 이용
+5
+Disk의 논리적 구조
+• 논리적 관점 (Linux 입장에서 디스크 구조) – 디스크는 디스크 블록들의 집합 (disk is a collection of disk
+blocks) – 디스크 블록의 크기는 보통 페이지 프레임의 크기와 같다 (4K,
+8K) – 블록 번호를 Sector Address로 변환하는 작업은 컨트롤러나
+디스크 드라이버에서 수행
+1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 ….
+0
+6
+Disk 블록 관리
+• 시나리오
+– 새로운 14 K 크기의 파일을 디스크에게 쓰려고 함
+– 디스크 블록의 크기는 4K로 가정 (따라서 4개의 디스크 블록이 필요) – 아래 그림에서 빗금이 있는 디스크 블록들은 이미 사용 중인 (파일의 데
+이터를 갖고 있는) 블록이라고 가정
+– 어떤 디스크 블록들을 할당할 것인가? (disk block allocation problem)
+• 디스크 블록 할당 방법
+– 연속 할당 방법 (sequential allocation) – 불연속 할당 방법 (non sequential allocation)
+0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 15 16 ..
+7
+Disk 블록 관리
+• 연속 할당 방법
+new file name
+start size 0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 .. 15 16
+8
+Disk 블록 관리
+• 불연속 할당 방법 : 블록 체인 (block chain) 방법
+– 현재 시나리오에서는 1, 5, 6, 9 블록을 할당
+– 할당된 블록을 링크로 연결
+new file name
+0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 .. 15 16
+9
+Disk 블록 관리
+• 불연속 할당 방법 : 인덱스 블록 (index block) 기법
+new file name
+index block
+…...
+0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 .. 15 16
+10
+File System 구조
+• 파일 시스템
+– 디스크의 각 파티션마다 존재
+– 4 부분으로 구성 : boot, super block, inode, data blocks – mkfs, newfs 등의 명령으로 생성
+system
+(PC)
+/dev/hda /dev/hdb
+/dev/hda1
+/dev/hda2
+/dev/hda3
+boot
+super block
+i-node
+disk blocks
+11
+File System 구조
+• 수퍼 블록 (super block) – 파일 시스템의 정보 관리하는 객체 (파일의 정보를 inode가 관리
+하는 것과 유사) – 파일 시스템 유형 : ext2/4, nfs, msdos, coda, proc, ntfs, …
+– Ext2/4의 경우
+• free inode와 free block들을 bitmap으로 관리
+• block group 정의 (ffs의 cylinder group와 유사한 개념)
+• 결함 허용 기능 제공
+– nfs (Network File System by Sun)의 경우
+• 각 파일 인터페이스를 서버에 대한 RPC로 변환
+• XDR 사용
+• 약한 일관성 (weak consistency) 보장
+12
+Structure of the Ext2 File System
+Block group 0 Block group 1 ... Block group n Boot
+block
+Super
+block
+Group
+descriptors
+Block
+bitmap
+Inode
+bitmap
+Inode
+blocks Data blocks
+partition 2 partition 3
+hard disk
+Ext2 file system
+block group
+partition 1
+13
+UNIX File System
+• File system layout – Bootstrap block(0)- kernel loading program
+– Super block(1) - file system information usually kept in memory
+• # of blocks for file system ( r)
+• # of blocks for inode blocks (n-1)
+• # of blocks for data blocks (r-n)
+• File system last update time
+• A list of free data block numbers
+• A list of free inode numbers – Inode blocks(2 ~ n)
+• A list of inode structures – Data blocks(n+1 ~ r)
+• A list of data blocks
+Bootstrap block
+Super block
+Inode blocks
+Data blocks
+0
+1
+2~n
+n+1~r
+14
+Caching: Buffer cache
+사용자 application
+디스크
+블록 1
+디스크
+블록 23
+디스크
+블록 24
+7장. File
+2
+목 차
+• Disk 구조
+• File system 구조
+• inode(index node)
+• Virtual File System
+• Kernel data structures for open files
+• UNIX file access primitives
+• Standard I/O Libraries
+• File System의 연결(mount)
+File 관련 issue
+• 파일 관련 issue
+– 사용자가 사용하는 이름과 disk 상의 데이터를 연결하는 객체
+– 파일 속성 제어
+– 파일 접근 제어
+– 파일 계층 구조 지원
+– 장치 파일 지원
+• Linux file access primitives – open, creat : 파일 열기 or 생성
+– close : 파일 닫기
+– read : 파일에서 정보 추출
+– write : 파일에 정보 기록
+– lseek : 파일 접근 위치 변경
+– unlink, remove : 파일 삭제
+– fcntl : 파일 속성 제어
+– …
+3
+Disk의 물리적 구성 요소
+ü Head, ARM
+ü Platter, Spindle
+ü Surface, Track, Sector, Cylinder
+4
+Disk의 물리적 구성 요소
+• 데이터 접근 방법
+– Sector addressing : surface(head), track(cylinder), sector – Heads move to appropriate track : 탐색 시간 (Seek time) – Wait for the sector to appear under the head : 회전 지연 시간
+(rotational latency) – Read/Write the sector: 데이터 전달 시간 (transmission time)
+– Seek time과 Rotational Latency를 줄이는 것이 중요
+è 다양한 디스크 스케줄링 방법 존재, parallel access 이용
+5
+Disk의 논리적 구조
+• 논리적 관점 (Linux 입장에서 디스크 구조) – 디스크는 디스크 블록들의 집합 (disk is a collection of disk
+blocks) – 디스크 블록의 크기는 보통 페이지 프레임의 크기와 같다 (4K,
+8K) – 블록 번호를 Sector Address로 변환하는 작업은 컨트롤러나
+디스크 드라이버에서 수행
+1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 ….
+0
+6
+Disk 블록 관리
+• 시나리오
+– 새로운 14 K 크기의 파일을 디스크에게 쓰려고 함
+– 디스크 블록의 크기는 4K로 가정 (따라서 4개의 디스크 블록이 필요) – 아래 그림에서 빗금이 있는 디스크 블록들은 이미 사용 중인 (파일의 데
+이터를 갖고 있는) 블록이라고 가정
+– 어떤 디스크 블록들을 할당할 것인가? (disk block allocation problem)
+• 디스크 블록 할당 방법
+– 연속 할당 방법 (sequential allocation) – 불연속 할당 방법 (non sequential allocation)
+0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 15 16 ..
+7
+Disk 블록 관리
+• 연속 할당 방법
+new file name
+start size 0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 .. 15 16
+8
+Disk 블록 관리
+• 불연속 할당 방법 : 블록 체인 (block chain) 방법
+– 현재 시나리오에서는 1, 5, 6, 9 블록을 할당
+– 할당된 블록을 링크로 연결
+new file name
+0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 .. 15 16
+9
+Disk 블록 관리
+• 불연속 할당 방법 : 인덱스 블록 (index block) 기법
+new file name
+index block
+…...
+0 1 2 3 4 5
+6 7 8 9 10 11
+12 13 14 .. 15 16
+10
+File System 구조
+• 파일 시스템
+– 디스크의 각 파티션마다 존재
+– 4 부분으로 구성 : boot, super block, inode, data blocks – mkfs, newfs 등의 명령으로 생성
+system
+(PC)
+/dev/hda /dev/hdb
+/dev/hda1
+/dev/hda2
+/dev/hda3
+boot
+super block
+i-node
+disk blocks
+11
+File System 구조
+• 수퍼 블록 (super block) – 파일 시스템의 정보 관리하는 객체 (파일의 정보를 inode가 관리
+하는 것과 유사) – 파일 시스템 유형 : ext2/4, nfs, msdos, coda, proc, ntfs, …
+– Ext2/4의 경우
+• free inode와 free block들을 bitmap으로 관리
+• block group 정의 (ffs의 cylinder group와 유사한 개념)
+• 결함 허용 기능 제공
+– nfs (Network File System by Sun)의 경우
+• 각 파일 인터페이스를 서버에 대한 RPC로 변환
+• XDR 사용
+• 약한 일관성 (weak consistency) 보장
+12
+Structure of the Ext2 File System
+Block group 0 Block group 1 ... Block group n Boot
+block
+Super
+block
+Group
+descriptors
+Block
+bitmap
+Inode
+bitmap
+Inode
+blocks Data blocks
+partition 2 partition 3
+hard disk
+Ext2 file system
+block group
+partition 1
+13
+UNIX File System
+• File system layout – Bootstrap block(0)- kernel loading program
+– Super block(1) - file system information usually kept in memory
+• # of blocks for file system ( r)
+• # of blocks for inode blocks (n-1)
+• # of blocks for data blocks (r-n)
+• File system last update time
+• A list of free data block numbers
+• A list of free inode numbers – Inode blocks(2 ~ n)
+• A list of inode structures – Data blocks(n+1 ~ r)
+• A list of data blocks
+Bootstrap block
+Super block
+Inode blocks
+Data blocks
+0
+1
+2~n
+n+1~r
+14
+Caching: Buffer cache
+사용자 application
+디스크
+블록 1
+디스크
+블록 23
+디스크
+블록 24
+
