@@ -113,7 +113,7 @@ int main()
 
 		requestPasing(request, buf);
 
-		printf("%s %s %s 처리 시작\n", request[0], request[1], request[2]);
+		printf("%s %s %s 처리 시작\n", request[0], request[1], request[2]); 
 
 		for (int i = 0; i < THREADPERWORK; i++) {
 			argument = (struct threadArg*)malloc(sizeof(struct threadArg));
