@@ -23,6 +23,7 @@ int main(char argc, char * argv[])
 
 	struct timespec start, stop;
 	double accum;
+	double total= 0;
 	if(argc != 3)
 	{
 		printf("Usage: %s <program> <num>",argv[0]);
@@ -31,47 +32,51 @@ int main(char argc, char * argv[])
 	//생성할 프로세스의 수
 	num = atoi(argv[2]);
 	
-	if( clock_gettime( CLOCK_MONOTONIC, &start) == -1 ) {
-		perror( "clock gettime" );
-		return EXIT_FAILURE;
-	}
 	
-	//프로세스 생성
-	for(i=0;i<num;i++)
-	{
-		pid = fork();
-		if(pid == -1){
-			i--;
-			continue;
-		}
-		else if(pid == 0){//클라이언트 프로세스로 변경
-			printf("%d Child process: %d\n",i,getpid());
-			
-			close(0);
-			//close(1);
-			
-			execlp((const char *)argv[1],(const char *)argv[1],(char *)0);
-			printf("Child execlp() faile\n");
-			return 0;
-		}
-		else{
-			continue;
-		}
-
-	}
 	
-	while ((wpid = wait(&status)) >= 0){}
+	for(int z = 0 ; z<10;z++){
 
-	if( clock_gettime( CLOCK_MONOTONIC, &stop) == -1 ) {
-		perror( "clock gettime" );
-		return EXIT_FAILURE;
+		if( clock_gettime( CLOCK_MONOTONIC, &start) == -1 ) {
+			perror( "clock gettime" );
+			return EXIT_FAILURE;
+		}
+		//프로세스 생성
+		for(i=0;i<num;i++){
+			pid = fork();
+			if(pid == -1){
+				i--;
+				continue;
+			}
+			else if(pid == 0){//클라이언트 프로세스로 변경
+				printf("%d Child process: %d\n",i,getpid());
+				
+				close(0);
+				//close(1);
+				
+				execlp((const char *)argv[1],(const char *)argv[1],(char *)0);
+				printf("Child execlp() faile\n");
+				return 0;
+			}
+			else{
+				continue;
+			}
+
+		}
+		
+		while ((wpid = wait(&status)) >= 0){}
+
+		if( clock_gettime( CLOCK_MONOTONIC, &stop) == -1 ) {
+			perror( "clock gettime" );
+			return EXIT_FAILURE;
+		}
+		accum = ( stop.tv_sec - start.tv_sec )
+			+ (double)( stop.tv_nsec - start.tv_nsec )
+			/ (double)BILLION;
+		printf("%.9f sec\n", accum);
+		total += accum;
+
 	}
-	accum = ( stop.tv_sec - start.tv_sec )
-		+ (double)( stop.tv_nsec - start.tv_nsec )
-		/ (double)BILLION;
-	printf("%.9f sec\n", accum);
-
-  	printf("return Parent\n");
+	printf("10번 평균 %.9f sec\n", total/10);
 	//system("rm ./channel/* -i"); //절대 조심 파일 다 삭제됨
 	return 0;
 
