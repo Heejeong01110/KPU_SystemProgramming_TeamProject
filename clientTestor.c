@@ -4,9 +4,9 @@
 #include <sys/wait.h>
 #include <sys/types.h>
 #include <errno.h>
-#include<sys/times.h>
+#include<time.h>
 
-#define CLK_TCK sysconf(_SC_CLK_TCK)
+#define BILLION 1000000000L
 
 void error_handling(char * message)
 {
@@ -21,10 +21,8 @@ int main(char argc, char * argv[])
 	char filename[255];
 	int status=0;
 
-	clock_t start, end;
-	struct tms starttms,endtms;
-	time_t t;
-	
+	struct timespec start, stop;
+	double accum;
 	if(argc != 3)
 	{
 		printf("Usage: %s <program> <num>",argv[0]);
@@ -33,12 +31,11 @@ int main(char argc, char * argv[])
 	//생성할 프로세스의 수
 	num = atoi(argv[2]);
 	
-	if((start=times(&starttms))==-1)
-	{
-		printf("time error");
-		perror("times 1");
-		exit(1);
+	if( clock_gettime( CLOCK_MONOTONIC, &start) == -1 ) {
+		perror( "clock gettime" );
+		return EXIT_FAILURE;
 	}
+	
 	//프로세스 생성
 	for(i=0;i<num;i++)
 	{
@@ -51,7 +48,7 @@ int main(char argc, char * argv[])
 			printf("%d Child process: %d\n",i,getpid());
 			
 			close(0);
-			close(1);
+			//close(1);
 			
 			execlp((const char *)argv[1],(const char *)argv[1],(char *)0);
 			printf("Child execlp() faile\n");
@@ -65,15 +62,15 @@ int main(char argc, char * argv[])
 	
 	while ((wpid = wait(&status)) >= 0){}
 
-	if((end=times(&endtms))==-1)
-	{
-		printf("time error");
-		perror("times 1");
-		exit(1);
+	if( clock_gettime( CLOCK_MONOTONIC, &stop) == -1 ) {
+		perror( "clock gettime" );
+		return EXIT_FAILURE;
 	}
-	printf("multi thread IPC real time: %.2f\n", ((double)(end-start)/CLK_TCK));
-	printf("multi thread IPC child user time: %.2f\n", ((double)(endtms.tms_cutime-starttms.tms_cutime)/CLK_TCK));
-	printf("multi thread IPC child sys time: %.2f\n", ((double)(endtms.tms_cstime-starttms.tms_cstime)/CLK_TCK));
+	accum = ( stop.tv_sec - start.tv_sec )
+		+ (double)( stop.tv_nsec - start.tv_nsec )
+		/ (double)BILLION;
+	printf("%.9f sec\n", accum);
+
   	printf("return Parent\n");
 	//system("rm ./channel/* -i"); //절대 조심 파일 다 삭제됨
 	return 0;
