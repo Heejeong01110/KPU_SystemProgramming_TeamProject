@@ -103,7 +103,7 @@ int main() {
 
     
 
-void* filesend(void* arg){ //스레드 함수 시작
+void* filesend(void* arg){ 
     struct threadArg * argument = (struct threadArg*)arg;
     //int n = argument->cCnt; //스레드
     int cCnt = argument->cCnt; //스레드
@@ -117,11 +117,13 @@ void* filesend(void* arg){ //스레드 함수 시작
     int readlen; /*code.txt 를 읽은 길이*/
     int totalfilereadlen = 0; /*서버에게 받은 파일 길이*/
     long long rwpointer; /* read write pointer */
+    int recvkey = 60040 + cCnt+THREADNUM;
+    int sendkey = 60040 + cCnt;
     fflush(stdout);
     
     /*3. 각 스레드는 전송용, 수신용 sharedmemory를 생성.*/
-    int stoctid = SharedMemoryInit(tshmId+1,fileSize);
-    int ctostid = SharedMemoryInit(tshmId+2,fileSize);
+    int stoctid = SharedMemoryInit(recvkey,fileSize);
+    int ctostid = SharedMemoryInit(sendkey,fileSize);
 
     /*4. client의 각 쓰레드는 "code.txt"파일을 3분할하여 병행적으로 읽은 후 "{자신의 PID}FIFO{n}2ser" 파일에 writelock를 건 후 write한다.*/
     /* 파일을 병행적으로 읽는 방법 
@@ -130,7 +132,7 @@ void* filesend(void* arg){ //스레드 함수 시작
         3. lseek()를 통해 적절한 위치로 read write pointer 이동시킨다.
     */
     
-    sprintf(linkFileName,"./channel/codelink%ld_%d",mypid,n);
+    sprintf(linkFileName,"./channel/codelink%ld_%d",mypid,cCnt);
     if(link("codeqq.txt",linkFileName)<0){
         printf("fail to call link(codeqq.txt,%s)\n",linkFileName);
         error_handler(linkFileName);
@@ -143,7 +145,7 @@ void* filesend(void* arg){ //스레드 함수 시작
         exit(0);
     }
 
-    rwpointer = (fileSize)*(n-1);
+    rwpointer = (fileSize)*(cCnt-1);
     if(lseek(linkFd,rwpointer,SEEK_SET)<0){
         printf("fail to call lseek(%s)\n",linkFileName);
         error_handler(linkFileName);
@@ -159,14 +161,14 @@ void* filesend(void* arg){ //스레드 함수 시작
     SharedMemoryWrite(ctostid,buf);
     
     pthread_mutex_lock(&printlock);
-    if(n==1)
+    if(cCnt==1)
         printf("Thread1 Print Start\n");
-    if((n==2)){
+    if((cCnt==2)){
         if(endNum!=1)
             pthread_cond_wait(&printer2,&printlock);
         printf("Thread2 Print Start\n");
     }
-    else if((n==3)){
+    else if((cCnt==3)){
         if((endNum!=2))
             pthread_cond_wait(&printer3,&printlock);
         printf("Thread3 Print Start\n");
@@ -182,18 +184,18 @@ void* filesend(void* arg){ //스레드 함수 시작
     totallen+=write(1,buf,readlen);
     fflush(stdout);
 
-    if(n==1){
+    if(cCnt==1){
       endNum=1;
       pthread_cond_signal(&printer2);
     }
-    if(n==2){
+    if(cCnt==2){
       endNum=2;
       pthread_cond_signal(&printer3);
     }
     pthread_mutex_unlock(&printlock);
 
 
-    printf("\nfilesize = %lld Thread %d, fileread: %d byte, rcv: %d byte\n",afileSize,n,readlen, totallen);
+    printf("\nfilesize = %lld Thread %d, fileread: %d byte, rcv: %d byte\n",afileSize,cCnt,readlen, totallen);
     fflush(stdout);
     
     SharedMemoryFree(stoctid);

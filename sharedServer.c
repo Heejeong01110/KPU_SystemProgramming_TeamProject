@@ -132,12 +132,15 @@ void* filerecv(void * arg){
     long long fileSize = argument->fileSize;
     int cCnt = argument->cCnt; /*스레드의 number*/
     int tshmId = threadId*100 +cCnt*10; /*sharedmemory key 기본값*/
+    int recvkey = 60040 + cCnt;
+    int sendkey = 60040 + cCnt+THREADPERWORK;
+    
     char buf[fileSize];
     int readlen;
 
     /*3. 각 스레드는 전송용, 수신용 sharedmemory를 생성.*/
-    int stoctid = SharedMemoryCreate(tshmId+1,fileSize);
-    int ctostid = SharedMemoryCreate(tshmId+2,fileSize);
+    int stoctid = SharedMemoryCreate(sendkey,fileSize);
+    int ctostid = SharedMemoryCreate(recvkey,fileSize);
     
     /*4. 클라이언트에서 파일 전송 대기*/
     while(1){
