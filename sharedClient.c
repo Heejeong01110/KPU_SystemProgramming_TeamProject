@@ -53,6 +53,12 @@ int main() {
     char buf[MAX_SIZE];/*서버에게 request를 전달하기위한 버퍼*/
     int protocol;
     long long fileS; /*스레드 하나 당 읽을 파일 크기*/
+    struct flock fifo_lock;
+
+	fifo_lock.l_type = F_WRLCK;
+	fifo_lock.l_whence = SEEK_SET;
+	fifo_lock.l_start = 0;
+	fifo_lock.l_len = 4096;
 
    memset(buf,0x00,MAX_SIZE);
    pthread_cond_init(&printer1,NULL);
@@ -74,14 +80,23 @@ int main() {
 
     afileSize = (long long)sb.st_size;
     mypid = (long)getpid();
-    sprintf(buf,"request %ld %lld \n",mypid,afileSize);
+    snprintf(buf,20"request %ld %lld \n",mypid,afileSize);
+    //sprintf(buf,"request %ld %lld \n",mypid,afileSize);
     fileS = afileSize/3 + 1;
 
-    
+    if (fcntl(protocol, F_SETLKW, &fifo_lock) == -1) {
+		printf("fail to call fcntl()\n");
+		exit(0);
+	}
     if(write(protocol, buf, strlen(buf)) < 0 ){ 
         printf("fail to call write(protocol,request)\n");
         exit(1);
     }
+    fifo_lock.l_type = F_UNLCK;
+	if (fcntl(protocol, F_SETLK, &fifo_lock) == -1) {
+		printf("fail to call write()\n");
+		exit(0);
+	}
 
     write(1,buf,strlen(buf)); //확인용 출력
     close(protocol);
