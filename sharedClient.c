@@ -103,7 +103,7 @@ int main() {
 
     
 
-void* filesend(void* arg){ 
+void* filesend(void* arg){ //스레드 함수 시작
     struct threadArg * argument = (struct threadArg*)arg;
     //int n = argument->cCnt; //스레드
     int cCnt = argument->cCnt; //스레드
