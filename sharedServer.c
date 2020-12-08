@@ -61,15 +61,23 @@ void decoding(char code[],int len){
 
 int readRequest(int fd, char buf[])
 {
-   int i = 0;
-   int readlen;
-   while((readlen=read(fd, &buf[i++], 1))>0){
-      if(buf[i-1]=='\n'){
-         return i-1;
-      }
-   }
-   return i-1;
+	int i = 0;
+	int readlen;
+	int secure = 0;
+	while ((readlen = read(fd, &buf[i++], 1)) > 0) {
+		if (buf[i - 1] == '\n') {
+			return i - 1;
+		}
+ 
+		//BUF_SIZE보다 많이 읽지 못하게하여 버퍼오버플로우를 방지 
+		secure++;
+		if (secure > BUF_SIZE)
+			break;
+ 
+	}
+	return i - 1;
 }
+
 
 int main(void){
     char buf[MAX_SIZE]; /*클라이언트 접속 시 request를 저장하는 버퍼*/
