@@ -128,10 +128,7 @@ int main()
         //error_handler("./managefifo",null,null,null);
     }
    signal(SIGINT, signalhandler);
-   //sem_init(&printer, 0, 0);   
-   /*key_id = msgget((key_t)60041, IPC_CREAT | 0666); //send queue
-   key_id2 = msgget((key_t)60042, IPC_CREAT | 0666); //recv queue*/
-   //key_id3= msgget((key_t)60043, IPC_CREAT|0666); //result queue
+  
    printf("시작 전\n");
    if((protocol = open("./managefifo", O_RDONLY)) < 0){ //waiting in client
            printf("fail to call open manage()\n");
@@ -141,18 +138,15 @@ int main()
        }
    while(1){
         /*3. server는 managefifo에 있는 요청 메시지("request {자신의 PID} {파일 크기}")를 확인하면 응답을 위해 3개의 쓰레드를 할당하고*/
-       /*if((readlen=read(protocol, buf, BUF_SIZE)) < 0 ){ 
-      printf("fail to call read()");
-      //error_handler("./managefifo",null,null,null);
-        }*/
+       
         if((readlen=readRequest(protocol, buf)) < 0 ){ 
       printf("fail to call read()");
-      //error_handler("./managefifo",null,null,null);
+     
         }
    if(readlen<7) /*읽은 값이 "request"의 길이인 7보다 작으면 while문 재시작*/
       continue;
    requestPasing(request,buf);
-   // requestPasing(request,buf2);
+   printf("요청 수신: %s %s %s\n",request[0],request[1],request[2]);
    for (int i = 0; i < THREADPERWORK; i++) {
       argument = (struct threadArg*)malloc(sizeof(struct threadArg));
       snprintf(argument->fifoFileName,FILENAMESIZE-1, "./%sFIFO%d", request[1], i + 1);
@@ -163,17 +157,7 @@ int main()
    workNum++;
    memset(buf, 0x00, BUF_SIZE);
    lseek(protocol, 0, SEEK_SET);
-   // memset(buf2,0x00,BUF_SIZE);
-   /*for (int i = 0; i <= THREADPERWORK; i++)
-   {
-      pthread_join(thread[i], NULL);
-   }*/
-   //sem_destroy(&threadrock);
-   //unlink("./managefifo");
-   /*if (msgctl(key_id2, IPC_RMID, NULL) == -1) {
-      printf("msgctl failed\n");
-      exit(1);
-   }*/
+  
    }
    close(protocol);
    unlink("./managefifo");
@@ -195,12 +179,12 @@ void* filerecv(void* arg) {
    struct msgbuf mybuf;
    /*매개변수 저장*/
    struct threadArg* argument = (struct threadArg*)arg;
+
    recvkey = msgget((key_t)60040 + (key_t)argument->number, IPC_CREAT | 0666); //recv queue
    sendkey = msgget((key_t)60040 + (key_t)(argument->number + THREADPERWORK), IPC_CREAT | 0666); //recv queue
    long long fileSize = argument->fileSize;
-   snprintf(fifo2SerFileName,FILENAMESIZE-1, "%s2ser", argument->fifoFileName);
-   snprintf(fifo2CliFileName,FILENAMESIZE-1, "%s2cli", argument->fifoFileName);
-   snprintf(tempFileName, FILENAMESIZE-1,"./%stemp.txt", argument->fifoFileName);
+ 
+   snprintf(tempFileName, FILENAMESIZE-1,"./channel/%stemp.txt", argument->fifoFileName);
    
    if ((tempfd = open(tempFileName, O_RDWR | O_CREAT,0777)) < 0) {
       printf(" ");
@@ -240,7 +224,7 @@ void* filerecv(void* arg) {
    }
 
 
-
+   printf("Thread %d, send origin\n", argument->number);
    msgctl(recvkey,IPC_RMID, 0);
    msgctl(sendkey,IPC_RMID, 0);
 }
