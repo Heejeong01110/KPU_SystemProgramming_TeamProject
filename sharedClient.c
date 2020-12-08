@@ -42,24 +42,24 @@ static int SharedMemoryFree(int shmid);
 void error_handler(char * FileName){
     if(FileName!=null)
         unlink(FileName);
-	pthread_exit(0);
+   pthread_exit(0);
 }
 struct threadArg{
     long long fileSize; //파일 사이즈
-	int cCnt; //클라이언트 수
+   int cCnt; //클라이언트 수
 };
 
 
 int main() {
     struct threadArg * argument;
-	char buf[MAX_SIZE];
+   char buf[MAX_SIZE];
     int protocol;
 
-	memset(buf,0x00,MAX_SIZE);
-	pthread_cond_init(&printer1,NULL);
-	pthread_cond_init(&printer2,NULL);
-	pthread_cond_init(&printer3,NULL);
-	pthread_mutex_init(&printlock,NULL);
+   memset(buf,0x00,MAX_SIZE);
+   pthread_cond_init(&printer1,NULL);
+   pthread_cond_init(&printer2,NULL);
+   pthread_cond_init(&printer3,NULL);
+   pthread_mutex_init(&printlock,NULL);
     /*2. open managefifo file 만약 파일이 없다면 {T}시간 동안 스핀하며 대기한다.*/
     //{T} 시간 측정 시작
     while((protocol = open("./managefifo", O_APPEND | O_WRONLY)) < 0){
@@ -86,13 +86,13 @@ int main() {
         exit(1);
     }
 
-	write(1,buf,strlen(buf));
+   write(1,buf,strlen(buf));
     close(protocol);
 
-
+    printf("client start\n");
     /*4. 3개의 쓰레드를 할당*/
     for(int i=0;i<THREADNUM;i++){
-	    //실패 시 에러처리 추가 
+       //실패 시 에러처리 추가 
         argument = (struct threadArg *)malloc(sizeof(struct threadArg));
         argument->fileSize = fileS;
         argument->cCnt=i+1;
@@ -101,7 +101,7 @@ int main() {
 
 
     for(int i=0;i<THREADNUM;i++){
-	//실패 시 에러처리 추가
+   //실패 시 에러처리 추가
           pthread_join(thread[i],NULL);
     }
 
@@ -112,20 +112,20 @@ int main() {
 
 void* filesend(void* arg){ 
     struct threadArg * argument = (struct threadArg*)arg;
-	int n = argument->cCnt; //스레드
+   int n = argument->cCnt; //스레드
     long long fileSize = argument->fileSize;
     
     //int threadShmid = 10 + (int)arg;//10을 서버에서 받아오게 수정
 
     char recvbuf[fileSize];
-	char sendbuf[fileSize];
+   char sendbuf[fileSize];
     int threadId = (int)mypid;
     int cCnt = n; //스레드
     int tshmId = threadId*100 + cCnt*10;
     char linkFileName[FILENAMESIZE];
     int linkFd;
-	char buf[fileSize];
-	int readlen;
+   char buf[fileSize];
+   int readlen;
     long long rwpointer; /* read write pointer */
     fflush(stdout);
     
@@ -135,9 +135,9 @@ void* filesend(void* arg){
 
     /*5client의 각 쓰레드는 "code.txt"파일을 3분할하여 병행적으로 읽은 후 "{자신의 PID}FIFO{n}2ser" 파일에 writelock를 건 후 write한다.*/
     /* 파일을 병행적으로 읽는 방법 
-	1. link()를 통해 링크파일을 만든다(링크파일은 read write pointer를 공유하지 않지만 원본 파일의 내용은 공유하기 때문에 파일을 병행적으로 읽는 것에 적절하다)
-	2. 링크파일을 open한다.
-	3. lseek()를 통해 적절한 위치로 read write pointer 이동시킨다.
+   1. link()를 통해 링크파일을 만든다(링크파일은 read write pointer를 공유하지 않지만 원본 파일의 내용은 공유하기 때문에 파일을 병행적으로 읽는 것에 적절하다)
+   2. 링크파일을 open한다.
+   3. lseek()를 통해 적절한 위치로 read write pointer 이동시킨다.
     */
     
     sprintf(linkFileName,"codelink%ld_%d",mypid,n);
@@ -161,61 +161,53 @@ void* filesend(void* arg){
         exit(0);
     }
 
-	int totalfilereadlen = 0; //파일 사이즈 알 필요없음
+   int totalfilereadlen = 0; //파일 사이즈 알 필요없음
     if((readlen=read(linkFd,buf,fileSize))<0){
         printf("fail to call read()\n");
         error_handler(linkFileName);
         exit(0);
     }
-
     SharedMemoryWrite(ctostid,buf);
+    
  
 
-	pthread_mutex_lock(&printlock);
-	if(n==1)
-		printf("\n\nThread1 Print Start\n");
-        fflush(stdout);
-	if((n==2)){
-		if(endNum!=1)
-			pthread_cond_wait(&printer2,&printlock);
-		printf("\n\nThread2 Print Start\n");
-        fflush(stdout);
-	}
-	else if((n==3)){
-		if((endNum!=2))
-			pthread_cond_wait(&printer3,&printlock);
-		printf("\n\nThread3 Print Start\n");
-        fflush(stdout);
-	}
-	
-    
-	int totallen=0;
-    printf("%d - %d test3\n",tshmId,cCnt);
-    fflush(stdout);
-    
+   pthread_mutex_lock(&printlock);
+   if(n==1)
+      //printf("Thread1 Print Start\n");
+   if((n==2)){
+      if(endNum!=1)
+         pthread_cond_wait(&printer2,&printlock);
+      //printf("Thread2 Print Start\n");
+   }
+   else if((n==3)){
+      if((endNum!=2))
+         pthread_cond_wait(&printer3,&printlock);
+      //printf("Thread3 Print Start\n");
+   }
+   int totallen=0;
     while(1){
         if(SharedMemoryRead(stoctid,buf)){
             break;
         }
     }
-    
     totallen+=write(1,buf,readlen);
-	fflush(stdout);
-	if(n==1){
-		endNum=1;
-		pthread_cond_signal(&printer2);
-	}
-	if(n==2){
-		endNum=2;
-		pthread_cond_signal(&printer3);
-	}
-	pthread_mutex_unlock(&printlock);
+   fflush(stdout);
+   if(n==1){
+      endNum=1;
+      pthread_cond_signal(&printer2);
+   }
+   if(n==2){
+      endNum=2;
+      pthread_cond_signal(&printer3);
+   }
+   pthread_mutex_unlock(&printlock);
 
 
-	printf("\nfilesize = %lld Thread %d, fileread: %d byte, rcv: %d byte\n",afileSize,n,totalfilereadlen, totallen);
+   printf("\nfilesize = %lld Thread %d, fileread: %d byte, rcv: %d byte\n",afileSize,n,totalfilereadlen, totallen);
+    fflush(stdout);
     SharedMemoryFree(stoctid);
     SharedMemoryFree(ctostid);
-	unlink(linkFileName);
+   unlink(linkFileName);
 }
 
 
