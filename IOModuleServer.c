@@ -186,7 +186,7 @@ void* filerecv(void* arg) {
 			readflag = 1;
 		}
 	}
-	
+	//printf("\tThread %d, read %d byte\n", argument->number,totallen);
 	/* 7. server의 각 쓰레드는 "{요청자 PID}FIFO{n}temp.txt" 읽고 "{요청자 PID}FIFO{n}" 파일에 writelock를 건 후 write한다.*/
 	fifo_lock.l_type = F_WRLCK;
 	fifo_lock.l_whence = SEEK_SET;
