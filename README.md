@@ -58,21 +58,28 @@ UNIX 기반 텍스트파일 암호화-복호화 프로그램
 1. SharedMemory
 
 서버 : ./sharedServer
+
 클라이언트 : ./sharedClient
+
 
 
 2. MessagePassing
 
 서버 : ./message_passing_server
+
 클라이언트 : ./message_passing_client
+
 
 
 3. Pipe
 
 서버 : ./IOModuleServer
+
 클라이언트 : ./IOModuleClient
 
+
 암호화 되어있는 파일은 code.txt 이며, 
+
 서버에 의해 복호화 되어 터미널에 출력된다.
 
  
